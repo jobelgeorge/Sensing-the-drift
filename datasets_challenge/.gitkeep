@@ -1,0 +1,2 @@
+# This file ensures the datasets_challenge folder structure is tracked in git
+# The actual data files should not be committed (see .gitignore)

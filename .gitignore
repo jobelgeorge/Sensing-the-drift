@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Data Files (DO NOT COMMIT COMPETITION DATA)
+datasets_challenge/train/*.csv
+datasets_challenge/test/*.csv
+datasets_challenge/*.csv
+*.csv
+data/
+*.zip
+*.tar.gz
+
+# Model Files
+models/*.pth
+models/*.pt
+models/*.h5
+models/*.pkl
+models/*.ckpt
+checkpoints/
+*.pth
+*.pt
+
+# Logs
+logs/
+*.log
+tensorboard/
+runs/
+
+# OS Files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Kaggle
+.kaggle/
+kaggle.json
