@@ -41,24 +41,6 @@ venv.bak/
 # VS Code
 .vscode/
 
-# Data Files (DO NOT COMMIT COMPETITION DATA)
-datasets_challenge/train/*.csv
-datasets_challenge/test/*.csv
-datasets_challenge/*.csv
-*.csv
-data/
-*.zip
-*.tar.gz
-
-# Model Files
-models/*.pth
-models/*.pt
-models/*.h5
-models/*.pkl
-models/*.ckpt
-checkpoints/
-*.pth
-*.pt
 
 # Logs
 logs/
