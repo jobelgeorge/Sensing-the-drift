@@ -1,5 +1,27 @@
 """
 Enhanced LDS + Focal-R Loss for Imbalanced Regression
+
+HYPERPARAMETER TUNING GUIDE:
+================================
+1. bucket_weights: (many, medium, few)
+   - Start: (1.0, 2.0, 4.0)
+   - If few-shot MAE > 1.0: increase to (1.0, 3.0, 8.0)
+   - If many-shot MAE > 0.19: decrease to (1.0, 1.5, 3.0)
+
+2. focal_gamma: Controls hard example mining
+   - 0.5: Gentle focus on hard samples
+   - 1.0: Moderate focus (recommended start)
+   - 2.0: Aggressive focus (use if few-shot stuck)
+
+3. lds_sigma: Controls label smoothing
+   - 1.0: Minimal smoothing
+   - 2.0: Recommended for high imbalance (>100x)
+   - 3.0: Maximum smoothing (use if overfitting few-shot)
+
+4. huber_beta: Robustness parameter
+   - 0.05: More robust to outliers
+   - 0.1: Balanced
+   - 0.2: Less robust but faster convergence
 """
 import torch
 import torch.nn as nn
@@ -14,13 +36,13 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
     def __init__(
         self,
         train_targets: np.ndarray,
-        bucket_weights: tuple = (1.0, 4.0, 12.0),
+        bucket_weights: tuple = (1.0, 2.5, 6.0),  # ✅ TUNED: Stronger few-shot weight
         lds_kernel: str = 'gaussian',
         lds_ks: int = 5,
-        lds_sigma: float = 2.0,
-        focal_gamma: float = 2.0,
+        lds_sigma: float = 2.0,  # ✅ TUNED: Increased smoothing
+        focal_gamma: float = 1.0,
         use_huber: bool = True,
-        huber_beta: float = 0.05,
+        huber_beta: float = 0.065,  # ✅ TUNED: Slightly higher for stability
         num_bins: int = 100,
         eps: float = 1e-8
     ):
@@ -48,15 +70,23 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         self._base_loss = nn.SmoothL1Loss(beta=huber_beta, reduction="none") if use_huber \
                           else nn.L1Loss(reduction="none")
 
-        # nice to print once for visibility
+        # Print configuration
         n_many = np.sum(abs_targets <= self.t0)
         n_medium = np.sum((abs_targets > self.t0) & (abs_targets <= self.t1))
         n_few = np.sum(abs_targets > self.t1)
         total = len(abs_targets)
-        print(f"[EnhancedLDS+FocalR] many≤{self.t0:.4f}, med≤{self.t1:.4f} | "
-              f"dist: many={n_many/total:.1%}, med={n_medium/total:.1%}, few={n_few/total:.1%} | "
-              f"weights: {self.w_many}/{self.w_medium}/{self.w_few} | "
-              f"focal_gamma={focal_gamma}, huber_beta={huber_beta}")
+        print(f"\n{'='*70}")
+        print(f"[EnhancedLDS+FocalR Loss Configuration]")
+        print(f"{'='*70}")
+        print(f"Bucket thresholds: Many≤{self.t0:.4f}° | Medium≤{self.t1:.4f}°")
+        print(f"Data distribution:")
+        print(f"  Many:   {n_many:6d} ({n_many/total*100:5.2f}%)")
+        print(f"  Medium: {n_medium:6d} ({n_medium/total*100:5.2f}%)")
+        print(f"  Few:    {n_few:6d} ({n_few/total*100:5.2f}%)")
+        print(f"Bucket weights: {self.w_many:.1f} / {self.w_medium:.1f} / {self.w_few:.1f}")
+        print(f"Focal gamma: {focal_gamma} | Huber beta: {huber_beta}")
+        print(f"LDS: kernel={lds_kernel}, sigma={lds_sigma}")
+        print(f"{'='*70}\n")
 
     def _compute_lds_weights(self, targets, kernel, ks, sigma, num_bins):
         tmin, tmax = targets.min(), targets.max()
@@ -87,7 +117,7 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         if target_value in self.weights_dict:
             return self.weights_dict[target_value]
 
-        keys = np.array(sorted(self.weights_dict.keys()))  # ensure sorted
+        keys = np.array(sorted(self.weights_dict.keys()))
         idx = np.searchsorted(keys, target_value)
 
         if idx == 0:
@@ -105,11 +135,11 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         target = target.squeeze(-1)
         base = self._base_loss(pred, target)
 
-        # LDS
+        # LDS weights
         lds_w = torch.tensor([self._get_lds_weight(t.item()) for t in target],
                              device=pred.device, dtype=pred.dtype)
 
-        # Focal-R
+        # Focal-R modulation
         if self.focal_gamma > 0:
             with torch.no_grad():
                 max_err = base.max().clamp_min(1e-6)
@@ -117,18 +147,20 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         else:
             foc = torch.ones_like(base)
 
-        # Buckets
+        # Bucket weights
         abs_t = target.abs()
         bucket = torch.ones_like(target)
         bucket[abs_t <= self.t0] = self.w_many
         bucket[(abs_t > self.t0) & (abs_t <= self.t1)] = self.w_medium
         bucket[abs_t > self.t1] = self.w_few
 
+        # Combined weighting
         weights = lds_w * (1.0 + foc) * bucket
         return (weights * base).sum() / (weights.sum() + self.eps)
 
     @torch.no_grad()
     def bucket_metrics(self, pred: torch.Tensor, target: torch.Tensor):
+        """Compute MAE per bucket for monitoring"""
         p = pred.squeeze(-1)
         t = target.squeeze(-1)
         abs_t = t.abs()

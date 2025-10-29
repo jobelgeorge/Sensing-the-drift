@@ -1,100 +1,125 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F  # <-- Make sure to import functional
+import torch.nn.functional as F
 
 class LSTMModel(nn.Module):
     """
-    Enhanced LSTM model with Bidirectional layer, Attention mechanism, 
-    and stronger regularization.
+    Production-ready BiLSTM with Attention for Imbalanced Regression.
+    
+    Key improvements:
+    - Bidirectional LSTM for richer temporal features
+    - Attention mechanism focuses on critical drift moments
+    - Feature extraction layer (128-dim) for FDS compatibility
+    - Layer normalization (stable with small batches)
+    - Progressive dropout for regularization
     """
     
-    def __init__(self, input_size, output_size, rnn_units=64, fc_units=64, 
-                 dropout=[0.5, 0.35, 0.25], num_layers=2, use_batch_norm=True, 
-                 bidirectional=True): # <-- Add bidirectional argument
+    def __init__(self, input_size, output_size=1, rnn_units=128, fc_units=128, 
+                 dropout=0.3, num_layers=2, use_batch_norm=True, 
+                 bidirectional=True, feature_dim=128):
         super(LSTMModel, self).__init__()
         
         self.hidden_size = rnn_units
         self.num_layers = num_layers
         self.use_batch_norm = use_batch_norm
         self.bidirectional = bidirectional
-        self.num_directions = 2 if bidirectional else 1 # Used for calculations
+        self.num_directions = 2 if bidirectional else 1
+        self.feature_dim = feature_dim
         
         # Handle dropout as list or single value
         if isinstance(dropout, list):
-            dropout_rnn = dropout[0] if len(dropout) > 0 else 0.5
-            dropout_fc1 = dropout[1] if len(dropout) > 1 else 0.35
-            dropout_fc2 = dropout[2] if len(dropout) > 2 else 0.25
+            dropout_rnn = dropout[0] if len(dropout) > 0 else 0.3
+            dropout_fc1 = dropout[1] if len(dropout) > 1 else 0.25
+            dropout_fc2 = dropout[2] if len(dropout) > 2 else 0.2
         else:
             dropout_rnn = dropout
-            dropout_fc1 = dropout * 0.7
-            dropout_fc2 = dropout * 0.5
+            dropout_fc1 = dropout * 0.8
+            dropout_fc2 = dropout * 0.6
         
-        # Input normalization
+        # Input normalization (LayerNorm > BatchNorm for stability)
         self.input_norm = nn.LayerNorm(input_size)
         
-        # LSTM Layer with dropout
-        self.lstm = nn.LSTM(input_size, rnn_units, num_layers, 
-                           batch_first=True, dropout=dropout_rnn if num_layers > 1 else 0, 
-                           bidirectional=self.bidirectional) # <-- Use bidirectional
+        # Bidirectional LSTM
+        self.lstm = nn.LSTM(
+            input_size, rnn_units, num_layers, 
+            batch_first=True, 
+            dropout=dropout_rnn if num_layers > 1 else 0, 
+            bidirectional=self.bidirectional
+        )
         
-        # --- ATTENTION MECHANISM LAYERS ---
-        # The input to the attention mechanism will be the output of the LSTM
-        # which is (rnn_units * num_directions)
+        # Attention mechanism
         attn_input_size = self.hidden_size * self.num_directions
         self.attention_w = nn.Linear(attn_input_size, attn_input_size)
         self.attention_v = nn.Linear(attn_input_size, 1, bias=False)
-        # --- END ATTENTION ---
-
-        # Batch normalization (input size adjusted for bidirectional)
-        if use_batch_norm:
-            self.batch_norm = nn.BatchNorm1d(attn_input_size)
         
-        # Output layers with stronger regularization (input size adjusted for bidirectional)
-        self.dropout1 = nn.Dropout(dropout_rnn)
-        self.fc1 = nn.Linear(attn_input_size, fc_units) 
-        self.dropout2 = nn.Dropout(dropout_fc1)
-        self.fc2 = nn.Linear(fc_units, fc_units // 2)
-        self.dropout3 = nn.Dropout(dropout_fc2)
-        self.fc3 = nn.Linear(fc_units // 2, output_size)
+        # Layer normalization after attention
+        self.lstm_norm = nn.LayerNorm(attn_input_size)
         
-        self.activation = nn.ReLU()
+        # Feature extraction head (for FDS)
+        self.feature_head = nn.Sequential(
+            nn.Linear(attn_input_size, feature_dim),
+            nn.LayerNorm(feature_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_fc1 * 0.5)
+        )
         
-    def forward(self, x):
+        # Regression head
+        self.regressor = nn.Sequential(
+            nn.Dropout(dropout_fc1),
+            nn.Linear(feature_dim, fc_units),
+            nn.LayerNorm(fc_units),
+            nn.GELU(),
+            nn.Dropout(dropout_fc2),
+            nn.Linear(fc_units, fc_units // 2),
+            nn.LayerNorm(fc_units // 2),
+            nn.GELU(),
+            nn.Dropout(dropout_fc2 * 0.5),
+            nn.Linear(fc_units // 2, output_size)
+        )
+        
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Proper initialization for LSTM + Linear layers"""
+        for name, param in self.named_parameters():
+            if 'lstm' in name and 'weight' in name:
+                if param.dim() >= 2:
+                    nn.init.orthogonal_(param)
+            elif 'weight' in name and param.dim() > 1:
+                nn.init.xavier_uniform_(param)
+            elif 'bias' in name:
+                nn.init.zeros_(param)
+        
+    def forward(self, x, return_features=False):
+        """
+        Args:
+            x: [B, T, F] - batch, time, features
+            return_features: Return 128-dim features for FDS
+        
+        Returns:
+            pred: [B, 1]
+            features: [B, 128] (if return_features=True)
+        """
         # Input normalization
         x = self.input_norm(x)
         
-        # LSTM forward pass
-        # lstm_out shape: (batch_size, seq_len, rnn_units * num_directions)
-        lstm_out, _ = self.lstm(x)
+        # BiLSTM forward pass
+        lstm_out, _ = self.lstm(x)  # [B, T, hidden*2]
         
-        # --- ATTENTION MECHANISM ---
-        # Calculate attention scores
-        # (batch_size, seq_len, rnn_units * num_directions)
-        attn_scores = torch.tanh(self.attention_w(lstm_out))
+        # Attention mechanism
+        attn_scores = torch.tanh(self.attention_w(lstm_out))  # [B, T, hidden*2]
+        attn_weights = F.softmax(self.attention_v(attn_scores), dim=1)  # [B, T, 1]
+        context_vector = torch.sum(attn_weights * lstm_out, dim=1)  # [B, hidden*2]
         
-        # Calculate attention weights
-        # (batch_size, seq_len, 1)
-        attn_weights = F.softmax(self.attention_v(attn_scores), dim=1)
+        # Layer normalization
+        context_vector = self.lstm_norm(context_vector)
         
-        # Calculate context vector (weighted sum of hidden states)
-        # (batch_size, rnn_units * num_directions)
-        context_vector = torch.sum(attn_weights * lstm_out, dim=1)
+        # Feature extraction (for FDS)
+        features = self.feature_head(context_vector)  # [B, 128]
         
-        # Set last_output to the context vector from attention
-        last_output = context_vector
-        # --- END ATTENTION ---
+        # Regression
+        pred = self.regressor(features)  # [B, 1]
         
-        # Apply batch normalization
-        if self.use_batch_norm:
-            last_output = self.batch_norm(last_output)
-        
-        # Dense layers with progressive regularization
-        out = self.dropout1(last_output)
-        out = self.fc1(out)
-        out = self.activation(out)
-        out = self.dropout2(out)
-        out = self.fc2(out)
-        out = self.activation(out)
-        out = self.dropout3(out)
-        out = self.fc3(out)
-        return out
+        if return_features:
+            return pred, features
+        return pred
