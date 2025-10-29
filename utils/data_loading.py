@@ -282,6 +282,9 @@ def load_test_data(
     test_path: Union[str, Path],
     batchsize: int,
     pipeline: Pipeline,
+    sequence_length: int = 20,  # ✅ NEW: Make explicit parameter
+    columns_to_drop: Optional[List[str]] = None,  # ✅ NEW: Make explicit parameter
+    target: str = "sideSlip",  # ✅ NEW: Add target parameter
     seed: int = 42,
     load_anonymized_data: bool = False,
     verbose: bool = False
@@ -293,6 +296,9 @@ def load_test_data(
         test_path: Path to folder containing test CSV files
         batchsize: Batch size for DataLoader
         pipeline: Pre-fitted preprocessing pipeline from load_data()
+        sequence_length: Sliding window size (must match training!)
+        columns_to_drop: Columns to exclude from features (must match training!)
+        target: Target column name (default: "sideSlip")
         seed: Random seed for reproducibility
         load_anonymized_data: If True, adds dummy target columns for anonymized test data
         verbose: Whether to print progress information
@@ -325,7 +331,26 @@ def load_test_data(
         
         dfs.append(df)
     
-    test_dataset = pipeline.transform(dfs)
+    # ✅ Apply preprocessing pipeline
+    dfs_preprocessed = pipeline.transform(dfs)
+    
+    # ✅ Create PyTorch datasets
+    from .custom_datasets import sequential_dataset
+    
+    if columns_to_drop is None:
+        columns_to_drop = [target, "vyCG", "time", "longitude", "latitude"]
+    
+    test_datasets = [
+        sequential_dataset(
+            df=df,
+            target=target,
+            seq_length=sequence_length,
+            columns_to_drop=columns_to_drop,
+            dtype=torch.float32
+        ) for df in dfs_preprocessed
+    ]
+    
+    test_dataset = ConcatDataset(test_datasets)
     
     test_dataloader = DataLoader(
         test_dataset,

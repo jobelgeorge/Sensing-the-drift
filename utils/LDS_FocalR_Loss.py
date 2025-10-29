@@ -26,24 +26,26 @@ HYPERPARAMETER TUNING GUIDE:
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd  # ✅ ADD: For CSV loading
 from scipy.ndimage import gaussian_filter1d
 
 
 class EnhancedLDS_FocalR_Loss(nn.Module):
     """
-    LDS (smoothed inverse density) * (1 + Focal^gamma) * explicit bucket weights
+    LDS + Focal-R with CSV-based bucket definitions (competition-aligned).
     """
     def __init__(
         self,
         train_targets: np.ndarray,
-        bucket_weights: tuple = (1.0, 2.5, 6.0),  # ✅ TUNED: Stronger few-shot weight
+        bucket_weights: tuple = (1.0, 3.0, 8.0),
         lds_kernel: str = 'gaussian',
-        lds_ks: int = 5,
-        lds_sigma: float = 2.0,  # ✅ TUNED: Increased smoothing
+        lds_ks: int = 7,
+        lds_sigma: float = 2.0,
         focal_gamma: float = 1.0,
         use_huber: bool = True,
-        huber_beta: float = 0.065,  # ✅ TUNED: Slightly higher for stability
+        huber_beta: float = 0.08,
         num_bins: int = 100,
+        dist_csv_path: str = None,  # ✅ NEW: Path to distribution CSV
         eps: float = 1e-8
     ):
         super().__init__()
@@ -51,12 +53,34 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         if isinstance(train_targets, torch.Tensor):
             train_targets = train_targets.cpu().numpy()
         train_targets = train_targets.flatten()
-        abs_targets = np.abs(train_targets)
 
-        # 90th / 99th percentile buckets (many / medium / few)
-        self.t0 = float(np.percentile(abs_targets, 90.0))
-        self.t1 = float(np.percentile(abs_targets, 99.0))
-
+        # ============================================================================
+        # ✅ FIX: Load bucket definitions from CSV (competition-aligned)
+        # ============================================================================
+        if dist_csv_path is None:
+            raise ValueError(
+                "dist_csv_path is required! Pass path to sideSlip_distribution.csv"
+            )
+        
+        dist_df = pd.read_csv(dist_csv_path)
+        self.shot_band_mapping = dist_df.set_index("sideSlip")["band"].to_dict()
+        
+        # Build reverse mapping: band → list of sideslip values
+        self.band_ranges = {
+            'many': set(),
+            'medium': set(),
+            'few': set()
+        }
+        for sideslip, band in self.shot_band_mapping.items():
+            self.band_ranges[band].add(float(sideslip))
+        
+        # Compute approximate boundaries (for logging only)
+        many_vals = [abs(s) for s, b in self.shot_band_mapping.items() if b == 'many']
+        medium_vals = [abs(s) for s, b in self.shot_band_mapping.items() if b == 'medium']
+        
+        self.t0 = max(many_vals) if many_vals else 2.4  # Many-shot max
+        self.t1 = max(medium_vals) if medium_vals else 5.0  # Medium-shot max
+        
         self.w_many, self.w_medium, self.w_few = bucket_weights
         self.focal_gamma = focal_gamma
         self.use_huber = use_huber
@@ -70,15 +94,23 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         self._base_loss = nn.SmoothL1Loss(beta=huber_beta, reduction="none") if use_huber \
                           else nn.L1Loss(reduction="none")
 
-        # Print configuration
-        n_many = np.sum(abs_targets <= self.t0)
-        n_medium = np.sum((abs_targets > self.t0) & (abs_targets <= self.t1))
-        n_few = np.sum(abs_targets > self.t1)
-        total = len(abs_targets)
+        # Print configuration (using CSV-based stats)
+        y_rounded = np.round(train_targets, 1)
+        bands_train = pd.Series(y_rounded).map(self.shot_band_mapping).fillna("unknown")
+        band_counts = bands_train.value_counts()
+        
+        n_many = band_counts.get('many', 0)
+        n_medium = band_counts.get('medium', 0)
+        n_few = band_counts.get('few', 0)
+        total = len(train_targets)
+        
         print(f"\n{'='*70}")
-        print(f"[EnhancedLDS+FocalR Loss Configuration]")
+        print(f"[EnhancedLDS+FocalR Loss - CSV-Aligned Configuration]")
         print(f"{'='*70}")
-        print(f"Bucket thresholds: Many≤{self.t0:.4f}° | Medium≤{self.t1:.4f}°")
+        print(f"Loaded {len(self.shot_band_mapping)} band definitions from CSV")
+        print(f"Approximate boundaries (max |sideslip| per band):")
+        print(f"  Many-shot:   <= {self.t0:.4f} degrees")
+        print(f"  Medium-shot: <= {self.t1:.4f} degrees")
         print(f"Data distribution:")
         print(f"  Many:   {n_many:6d} ({n_many/total*100:5.2f}%)")
         print(f"  Medium: {n_medium:6d} ({n_medium/total*100:5.2f}%)")
@@ -89,6 +121,9 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         print(f"{'='*70}\n")
 
     def _compute_lds_weights(self, targets, kernel, ks, sigma, num_bins):
+        """
+        Compute LDS (label distribution smoothing) weights for targets
+        """
         tmin, tmax = targets.min(), targets.max()
         bin_edges = np.linspace(tmin, tmax, num_bins + 1)
 
@@ -96,16 +131,16 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         bin_idx = np.clip(bin_idx, 0, num_bins - 1)
 
         counts = np.bincount(bin_idx, minlength=num_bins).astype(float)
-
+        
         if kernel == 'gaussian':
             smooth = gaussian_filter1d(counts, sigma=sigma, mode='constant', cval=0.0)
         else:
             smooth = np.convolve(counts, np.bartlett(ks), mode='same')
-
+        
         smooth = np.maximum(smooth, 1.0)
         inv = 1.0 / smooth
         inv /= inv.mean()
-
+        
         wdict = {}
         for t in targets:
             i = np.digitize([t], bin_edges)[0] - 1
@@ -114,12 +149,15 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         return wdict
 
     def _get_lds_weight(self, target_value):
+        """
+        Get LDS weight for a specific target value (interpolated if not exact)
+        """
         if target_value in self.weights_dict:
             return self.weights_dict[target_value]
-
+        
         keys = np.array(sorted(self.weights_dict.keys()))
         idx = np.searchsorted(keys, target_value)
-
+        
         if idx == 0:
             return self.weights_dict[keys[0]]
         elif idx == len(keys):
@@ -130,7 +168,17 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
             alpha = (target_value - k1) / (k2 - k1 + self.eps)
             return (1 - alpha) * w1 + alpha * w2
 
+    def _get_bucket(self, target_value: float) -> str:
+        """
+        ✅ NEW: Map target value to band using CSV lookup.
+        """
+        rounded = round(target_value, 1)
+        return self.shot_band_mapping.get(rounded, "unknown")
+
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the forward pass (loss value) for the given predictions and targets
+        """
         pred = pred.squeeze(-1)
         target = target.squeeze(-1)
         base = self._base_loss(pred, target)
@@ -147,12 +195,17 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
         else:
             foc = torch.ones_like(base)
 
-        # Bucket weights
-        abs_t = target.abs()
+        # ✅ FIX: Bucket weights using CSV lookup
         bucket = torch.ones_like(target)
-        bucket[abs_t <= self.t0] = self.w_many
-        bucket[(abs_t > self.t0) & (abs_t <= self.t1)] = self.w_medium
-        bucket[abs_t > self.t1] = self.w_few
+        for i, t in enumerate(target):
+            band = self._get_bucket(t.item())
+            if band == 'many':
+                bucket[i] = self.w_many
+            elif band == 'medium':
+                bucket[i] = self.w_medium
+            elif band == 'few':
+                bucket[i] = self.w_few
+            # else: unknown → weight=1.0
 
         # Combined weighting
         weights = lds_w * (1.0 + foc) * bucket
@@ -160,13 +213,28 @@ class EnhancedLDS_FocalR_Loss(nn.Module):
 
     @torch.no_grad()
     def bucket_metrics(self, pred: torch.Tensor, target: torch.Tensor):
-        """Compute MAE per bucket for monitoring"""
+        """
+        ✅ FIX: Compute MAE per bucket using CSV-based bands.
+        """
         p = pred.squeeze(-1)
         t = target.squeeze(-1)
-        abs_t = t.abs()
-        mask_many = (abs_t <= self.t0)
-        mask_med = (abs_t > self.t0) & (abs_t <= self.t1)
-        mask_few = (abs_t > self.t1)
+        
+        # Map targets to bands
+        bands = [self._get_bucket(val.item()) for val in t]
+        bands_tensor = torch.tensor(
+            [1 if b=='many' else 2 if b=='medium' else 3 if b=='few' else 0 for b in bands],
+            device=p.device
+        )
+        
+        mask_many = (bands_tensor == 1)
+        mask_med = (bands_tensor == 2)
+        mask_few = (bands_tensor == 3)
 
-        def mae(m): return (p[m] - t[m]).abs().mean().item() if m.any() else float('nan')
-        return dict(mae_many=mae(mask_many), mae_medium=mae(mask_med), mae_few=mae(mask_few))
+        def mae(m): 
+            return (p[m] - t[m]).abs().mean().item() if m.any() else float('nan')
+        
+        return dict(
+            mae_many=mae(mask_many), 
+            mae_medium=mae(mask_med), 
+            mae_few=mae(mask_few)
+        )
