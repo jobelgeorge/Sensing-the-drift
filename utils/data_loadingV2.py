@@ -110,19 +110,44 @@ def load_data(
         print(filename)
         dfs.append(pd.read_csv(filename))
     
-    # === KEY DIFFERENCE FROM V1: TEMPORAL SPLIT BEFORE PREPROCESSING ===
-    # V1 does: pipeline.fit_transform(all_data) then random_split(dataset)
-    # V2 does: temporal_split(all_data) then pipeline.fit_transform(train_data)
     if train_ratio is not None:
+        import numpy as np
+        rng = np.random.RandomState(seed)
+        
         train_dfs = []
         val_dfs = []
-        for df in dfs:
+        
+        for idx, (df, filename) in enumerate(zip(dfs, csv_files)):
             n = len(df)
+            file_name = os.path.basename(filename)
+            
             if n < 2:
+                print(f" IGNORED: {file_name} (length={n}, too short)")
                 continue
-            split_idx = int(n * train_ratio)
-            train_dfs.append(df.iloc[:split_idx].reset_index(drop=True))
-            val_dfs.append(df.iloc[split_idx:].reset_index(drop=True))
+            
+            val_size = int(n * (1 - train_ratio))
+            buffer = sequence_length - 1
+            max_start = n - val_size - buffer
+            
+            if max_start <= buffer:
+                print(f" IGNORED: {file_name} (length={n}, insufficient for buffer={buffer})")
+                continue
+            
+            val_start = rng.randint(buffer, max_start + 1)
+            val_end = val_start + val_size
+            val_position_pct = (val_start / n) * 100
+            
+            print(f"{file_name}: n={n}, val_block=[{val_start}:{val_end}] ")
+            
+            train_df = pd.concat([
+                df.iloc[:val_start - buffer],
+                df.iloc[val_end + buffer:]
+            ]).reset_index(drop=True)
+            
+            val_df = df.iloc[val_start:val_end].reset_index(drop=True)
+            
+            train_dfs.append(train_df)
+            val_dfs.append(val_df)
     else:
         train_dfs = dfs
         val_dfs = None
