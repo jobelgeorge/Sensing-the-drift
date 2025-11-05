@@ -48,7 +48,7 @@ feature_names = ["handwheelAngle",
 
 def load_data(
     train_path: Union[str, Path],
-    train_ratio: Optional[float] = None,
+    val_file: str,
     columns_to_standardize: Optional[List[str]] = None,
     columns_to_drop: Optional[List[str]] = None,
     sequence_length: int = 20,
@@ -60,17 +60,18 @@ def load_data(
     scaling: bool = True,
     seed: int = 42,
     shuffle: bool = True,
-    val_file: Optional[str] = None,
-) -> Tuple[DataLoader, Optional[DataLoader], Pipeline, Dict[str, float], Dict[str, float]]:
+    train_ratio: Optional[float] = None,  # Deprecated, kept for compatibility
+) -> Tuple[DataLoader, DataLoader, Pipeline, Dict[str, float], Dict[str, float]]:
     """
-    Load and preprocess data with V1-style pipeline but V2-style temporal split.
+    Load and preprocess data using dedicated validation file strategy.
     
-    This matches V1's preprocessing exactly while fixing the data leakage issue
-    by using temporal (contiguous) splits instead of random splits.
+    This function uses a complete file separation approach: one file is designated
+    as the validation set while all other files are used for training.
     
     Args:
         train_path: Path to directory containing CSV files
-        train_ratio: Fraction for training (None = no validation split). Ignored if val_file is provided.
+        val_file: Filename (e.g., 'train_part_006.csv') to use as dedicated validation set.
+                  This file will be EXCLUDED from training and used ONLY for validation.
         columns_to_standardize: Features to standardize (default: feature_names)
         columns_to_drop: Features to drop before creating sequences
         sequence_length: Length of sequences for datasets
@@ -82,17 +83,16 @@ def load_data(
         scaling: Whether to apply standardization
         seed: Random seed
         shuffle: Whether to shuffle training data
-        val_file: Optional filename (e.g., 'train_part_006.csv') to use as dedicated validation set.
-                  If provided, this file will be excluded from training and used for validation.
+        train_ratio: Deprecated parameter, kept for backwards compatibility (ignored)
     
     Returns:
-        train_dataloader: Training dataloader
-        val_dataloader: Validation dataloader (None if train_ratio is None and val_file is None)
-        pipeline: Fitted preprocessing pipeline
-        mean_dict: Dictionary of feature means (empty if scaling=False)
-        std_dict: Dictionary of feature stds (empty if scaling=False)
+        train_dataloader: Training dataloader (all files except val_file)
+        val_dataloader: Validation dataloader (val_file only)
+        pipeline: Fitted preprocessing pipeline (fitted on training data only)
+        mean_dict: Dictionary of feature means from training data
+        std_dict: Dictionary of feature stds from training data
     """
-    # Set defaults to match V1
+    # Set defaults
     if columns_to_standardize is None:
         columns_to_standardize = feature_names.copy()
     
@@ -108,81 +108,35 @@ def load_data(
     if not csv_files:
         raise ValueError(f"No CSV files found in {train_path}")
     
-    # If val_file is specified, use it as dedicated validation set
-    if val_file is not None:
-        print(f"\n=== Using dedicated validation file: {val_file} ===\n")
-        train_dfs = []
-        val_dfs = []
-        
-        for filename in csv_files:
-            file_name = os.path.basename(filename)
-            df = pd.read_csv(filename)
-            print(f"{file_name}: n={len(df)}")
-            
-            if file_name == val_file:
-                print(f"  -> Assigned to VALIDATION set")
-                val_dfs.append(df)
-            else:
-                print(f"  -> Assigned to TRAINING set")
-                train_dfs.append(df)
-        
-        if not val_dfs:
-            raise ValueError(f"Validation file '{val_file}' not found in {train_path}")
-        
-        print(f"\nTraining files: {len(train_dfs)}, Validation files: {len(val_dfs)}")
+    # Dedicated validation file strategy
+    print(f"\n{'='*70}")
+    print(f"🎯 V2 Data Loader: Dedicated Validation File Strategy")
+    print(f"{'='*70}")
+    print(f"Validation file: {val_file}")
+    print(f"{'='*70}\n")
     
-    elif train_ratio is not None:
-        # Original temporal split logic
-        import numpy as np
-        rng = np.random.RandomState(seed)
+    train_dfs = []
+    val_dfs = []
+    
+    for filename in csv_files:
+        file_name = os.path.basename(filename)
+        df = pd.read_csv(filename)
         
-        dfs = []
-        for filename in csv_files:
-            print(filename)
-            dfs.append(pd.read_csv(filename))
-        
-        train_dfs = []
-        val_dfs = []
-        
-        for idx, (df, filename) in enumerate(zip(dfs, csv_files)):
-            n = len(df)
-            file_name = os.path.basename(filename)
-            
-            if n < 2:
-                print(f" IGNORED: {file_name} (length={n}, too short)")
-                continue
-            
-            val_size = int(n * (1 - train_ratio))
-            buffer = sequence_length - 1
-            max_start = n - val_size - buffer
-            
-            if max_start <= buffer:
-                print(f" IGNORED: {file_name} (length={n}, insufficient for buffer={buffer})")
-                continue
-            
-            val_start = rng.randint(buffer, max_start + 1)
-            val_end = val_start + val_size
-            val_position_pct = (val_start / n) * 100
-            
-            print(f"{file_name}: n={n}, val_block=[{val_start}:{val_end}] ")
-            
-            train_df = pd.concat([
-                df.iloc[:val_start - buffer],
-                df.iloc[val_end + buffer:]
-            ]).reset_index(drop=True)
-            
-            val_df = df.iloc[val_start:val_end].reset_index(drop=True)
-            
-            train_dfs.append(train_df)
-            val_dfs.append(val_df)
-    else:
-        # No validation split
-        dfs = []
-        for filename in csv_files:
-            print(filename)
-            dfs.append(pd.read_csv(filename))
-        train_dfs = dfs
-        val_dfs = None
+        if file_name == val_file:
+            print(f"✅ {file_name:25s} n={len(df):6,} → VALIDATION")
+            val_dfs.append(df)
+        else:
+            print(f"🔵 {file_name:25s} n={len(df):6,} → TRAINING")
+            train_dfs.append(df)
+    
+    if not val_dfs:
+        raise ValueError(f"Validation file '{val_file}' not found in {train_path}")
+    
+    print(f"\n{'='*70}")
+    print(f"📊 Split Summary:")
+    print(f"   Training files:   {len(train_dfs):2d} files")
+    print(f"   Validation files: {len(val_dfs):2d} file")
+    print(f"{'='*70}\n")
     
     # === BUILD PIPELINE EXACTLY LIKE V1 ===
     ct = ColumnTransformer(
@@ -256,17 +210,14 @@ def load_data(
             std_dict[col] = std[idx]
     
     # === TRANSFORM VALIDATION DATA (NO FITTING) ===
-    if val_dfs is not None:
-        val_dataset = pipeline.transform(val_dfs)
-        val_dataloader = DataLoader(
-            val_dataset,
-            batch_size=batchsize,
-            shuffle=False,  # Never shuffle validation
-            worker_init_fn=seed_worker,
-            generator=g
-        )
-    else:
-        val_dataloader = None
+    val_dataset = pipeline.transform(val_dfs)
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=batchsize,
+        shuffle=False,  # Never shuffle validation
+        worker_init_fn=seed_worker,
+        generator=g
+    )
     
     # Create training dataloader
     train_dataloader = DataLoader(

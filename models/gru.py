@@ -56,7 +56,7 @@ class GRUModel(nn.Module):
         # NO dropout/norm after this point
         self.head = nn.Linear(fc_units // 2, output_size)
     
-    def forward(self, x, return_features=True):
+    def forward(self, x, return_features=False):
         """
         Forward pass with optional feature extraction for FDS.
         
@@ -66,7 +66,7 @@ class GRUModel(nn.Module):
         
         Returns:
             If return_features=True: (penultimate_features, predictions)
-            If return_features=False: predictions only
+            If return_features=False: predictions only (default)
         """
         # GRU forward (no input norm)
         gru_out, _ = self.gru(x)
