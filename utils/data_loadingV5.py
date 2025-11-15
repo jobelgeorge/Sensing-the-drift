@@ -1,19 +1,13 @@
 """
-Data Loading V5: Stratified Temporal Split
-==========================================
-Splits data with temporal ordering while maintaining identical band distributions.
-
-Key Features:
-- Temporal ordering preserved within each band
-- Identical train/val band distributions (no mismatch!)
-- All files contribute to both train and validation
-- Last 15% of each band goes to validation
+Data Loading V5: Stratified Temporal Split (V1-Compatible)
+============================================================
+V1-compatible processing with stratified temporal splits by band.
 """
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 import glob
@@ -23,106 +17,108 @@ import sys
 # Import band mapping utilities
 try:
     from utils.band_mapping import load_band_mapping
+    from utils.custom_datasets import sequential_dataset, unsupervised_sequential_dataset
 except ModuleNotFoundError:
-    # Running as script from utils directory
     from band_mapping import load_band_mapping
+    from custom_datasets import sequential_dataset, unsupervised_sequential_dataset
 
 
-class TimeSeriesDataset(Dataset):
+def apply_threshold_v1_logic(df, threshold_column="vxCG", threshold_value=3.0, seq_length=20):
     """
-    Custom Dataset for time series data with sequences.
+    Apply threshold using V1 pipeline logic: group consecutive sequences.
+    This replicates ApplyThreshold transformer behavior.
+    
+    Returns list of DataFrames (valid groups longer than seq_length).
     """
-    def __init__(self, X, y):
-        self.X = torch.FloatTensor(X)
-        self.y = torch.FloatTensor(y)
+    df_mask = df[threshold_column] > threshold_value
+    groups = df[df_mask].groupby((~df_mask).cumsum())
     
-    def __len__(self):
-        return len(self.X)
+    valid_groups = []
+    for _, group in groups:
+        if len(group) > seq_length:
+            valid_groups.append(group.reset_index(drop=True))
     
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+    return valid_groups
 
 
-def create_sequences(data, target, sequence_length=20):
-    """
-    Create sequences from time series data.
-    
-    Args:
-        data: Input features (N, F)
-        target: Target values (N,)
-        sequence_length: Length of each sequence
-    
-    Returns:
-        X: Sequences (N-seq_len+1, seq_len, F)
-        y: Targets (N-seq_len+1,)
-    """
-    X, y = [], []
-    
-    for i in range(len(data) - sequence_length + 1):
-        X.append(data[i:i + sequence_length])
-        y.append(target[i + sequence_length - 1])
-    
-    return np.array(X), np.array(y)
-
-
-def stratified_temporal_split(df, band_dict, val_ratio=0.15, threshold_column="vxCG", threshold_value=3.0):
-    """
-    Split data with temporal ordering while maintaining identical band distributions.
-    
-    Strategy:
-    1. Apply threshold filter
-    2. For each band (many/medium/few):
-       - Find all samples belonging to this band (in temporal order)
-       - Take first (1-val_ratio) for training
-       - Take last val_ratio for validation
-    3. Concatenate all train/val indices
-    
-    This ensures:
-    - Train and Val have IDENTICAL band distributions
-    - Temporal ordering preserved (validation is "future" data)
-    - All bands represented proportionally in both sets
-    
-    Args:
-        df: DataFrame with sideslip targets
-        band_dict: Dictionary mapping sideslip values to bands
-        val_ratio: Fraction for validation (default 0.15 = 15%)
-        threshold_column: Column to threshold
-        threshold_value: Minimum value to keep
-    
-    Returns:
-        train_indices, val_indices: Lists of indices for train/val splits
-    """
-    # Apply threshold
-    df_filtered = df[df[threshold_column] > threshold_value].copy()
-    
-    if len(df_filtered) == 0:
+def stratified_temporal_split_groups(groups_list, band_dict, val_ratio=0.15):
+    """Split groups by band, last val_ratio% of each band's groups to validation."""
+    if len(groups_list) == 0:
         return [], []
     
-    # Classify each sample by band (round to 1 decimal for lookup)
-    df_filtered['band'] = df_filtered['sideSlip'].apply(
-        lambda x: band_dict.get(round(float(x), 1), 'unknown')
-    )
+    # Classify each group by dominant band
+    group_bands = []
+    for group_df in groups_list:
+        bands = group_df['sideSlip'].apply(
+            lambda x: band_dict.get(round(float(x), 1), 'unknown')
+        )
+        dominant_band = bands.mode()[0] if len(bands) > 0 else 'unknown'
+        group_bands.append(dominant_band)
     
-    train_indices = []
-    val_indices = []
+    # Organize by band
+    band_groups = {'many': [], 'medium': [], 'few': []}
+    for idx, (group_df, band) in enumerate(zip(groups_list, group_bands)):
+        if band in band_groups:
+            band_groups[band].append((idx, group_df))
     
-    # Split each band temporally
+    train_groups = []
+    val_groups = []
+    
+    # Temporal split per band
     for band_name in ['many', 'medium', 'few']:
-        # Get indices for this band (already in temporal order)
-        band_mask = df_filtered['band'] == band_name
-        band_indices = df_filtered[band_mask].index.tolist()
+        band_group_list = band_groups[band_name]
         
-        if len(band_indices) == 0:
+        if len(band_group_list) == 0:
             continue
         
-        # Calculate split point (first 85%, last 15%)
-        split_idx = int(len(band_indices) * (1 - val_ratio))
-        
-        # Split temporally
-        train_indices.extend(band_indices[:split_idx])   # First 85%
-        val_indices.extend(band_indices[split_idx:])      # Last 15%
+        split_idx = int(len(band_group_list) * (1 - val_ratio))
+        train_groups.extend([g[1] for g in band_group_list[:split_idx]])
+        val_groups.extend([g[1] for g in band_group_list[split_idx:]])
     
-    return train_indices, val_indices
+    return train_groups, val_groups
+
+
+def create_concat_dataset_from_groups(groups_list, target, seq_length, columns_to_drop):
+    """Create ConcatDataset from groups - each group becomes separate dataset."""
+    datasets = []
+    for group_df in groups_list:
+        ds = sequential_dataset(
+            df=group_df,
+            target=target,
+            seq_length=seq_length,
+            columns_to_drop=columns_to_drop
+        )
+        if len(ds) > 0:
+            datasets.append(ds)
+    
+    if len(datasets) == 0:
+        empty_df = pd.DataFrame()
+        return sequential_dataset(empty_df, target, seq_length, columns_to_drop)
+    
+    concat_ds = ConcatDataset(datasets)
+    # Add X_columns attribute for notebook compatibility
+    if len(datasets) > 0:
+        concat_ds.X_columns = datasets[0].X_columns
+    return concat_ds
+
+
+def create_unsupervised_concat_dataset_from_groups(groups_list, seq_length, columns_to_drop):
+    """Create ConcatDataset from groups for test data (no targets)."""
+    datasets = []
+    for group_df in groups_list:
+        ds = unsupervised_sequential_dataset(
+            df=group_df,
+            seq_length=seq_length,
+            columns_to_drop=columns_to_drop
+        )
+        if len(ds) > 0:
+            datasets.append(ds)
+    
+    if len(datasets) == 0:
+        empty_df = pd.DataFrame()
+        return unsupervised_sequential_dataset(empty_df, seq_length, columns_to_drop)
+    
+    return ConcatDataset(datasets)
 
 
 def load_data(
@@ -142,11 +138,12 @@ def load_data(
     """
     Load and prepare data with stratified temporal split.
     
-    V5 Features:
-    - Maintains temporal ordering within each band
+    V5 FIXED Features:
+    - Maintains V1 pipeline group-level processing
+    - Groups keep their boundaries (no cross-group sequences)
+    - Temporal ordering within each band preserved
     - Identical train/val band distributions
-    - All files contribute to both train and validation
-    - Validation uses last 15% of each band from each file
+    - Validation uses last 15% of each band's GROUPS
     
     Args:
         train_path: Path to training data directory
@@ -168,72 +165,49 @@ def load_data(
     np.random.seed(seed)
     torch.manual_seed(seed)
     
-    # Load band mapping
     band_dict = load_band_mapping()
     
     print("="*80)
-    print("🎯 V5 Data Loader: Stratified Temporal Split")
-    print("="*80)
-    print(f"Validation ratio: {val_ratio*100:.0f}% per band per file")
-    print(f"Threshold: {threshold_column} > {threshold_value}")
-    print(f"Temporal ordering: PRESERVED within each band")
-    print(f"Distribution matching: EXACT (train = val)")
+    print("V5 Data Loader: Stratified Temporal Split")
     print("="*80)
     
-    # Get all training files
     train_files = sorted(glob.glob(f"{train_path}/train_part_*.csv"))
-    print(f"\nTotal files: {len(train_files)}")
+    print(f"\nProcessing {len(train_files)} files...")
     
-    # Collect all data with stratified temporal splits
-    all_train_data = []
-    all_val_data = []
-    
-    total_train_samples = 0
-    total_val_samples = 0
-    
-    print("\n📁 Processing files with stratified temporal split...")
+    all_groups = []
     for file_path in train_files:
-        file_name = Path(file_path).name
         df = pd.read_csv(file_path)
-        
-        # Get stratified temporal split for this file
-        train_indices, val_indices = stratified_temporal_split(
-            df, band_dict, val_ratio, threshold_column, threshold_value
-        )
-        
-        if len(train_indices) == 0 and len(val_indices) == 0:
-            print(f"   {file_name:25s} | Skipped (no samples after threshold)")
-            continue
-        
-        # Extract train and val data
-        if len(train_indices) > 0:
-            all_train_data.append(df.loc[train_indices])
-            total_train_samples += len(train_indices)
-        
-        if len(val_indices) > 0:
-            all_val_data.append(df.loc[val_indices])
-            total_val_samples += len(val_indices)
-        
-        train_pct = 100 * len(train_indices) / len(df) if len(df) > 0 else 0
-        val_pct = 100 * len(val_indices) / len(df) if len(df) > 0 else 0
-        
-        print(f"   {file_name:25s} | Train: {len(train_indices):5,} ({train_pct:4.1f}%) | Val: {len(val_indices):5,} ({val_pct:4.1f}%)")
+        groups = apply_threshold_v1_logic(df, threshold_column, threshold_value, sequence_length)
+        all_groups.extend(groups)
     
-    # Concatenate all data
-    train_df = pd.concat(all_train_data, ignore_index=True)
-    val_df = pd.concat(all_val_data, ignore_index=True)
+    print(f"Total groups after threshold: {len(all_groups)}")
     
-    print("\n" + "="*80)
-    print("📊 Split Summary:")
-    print(f"   Training:   {total_train_samples:6,} samples ({100*total_train_samples/(total_train_samples+total_val_samples):.1f}%)")
-    print(f"   Validation: {total_val_samples:6,} samples ({100*total_val_samples/(total_train_samples+total_val_samples):.1f}%)")
-    print("="*80)
+    # Split groups by band
+    train_groups, val_groups = stratified_temporal_split_groups(all_groups, band_dict, val_ratio)
     
-    # Verify band distributions
-    print("\n📊 Verifying Band Distributions...")
+    # V1 pipeline: concat → scale → separate
+    train_concat = pd.concat(train_groups, keys=range(len(train_groups)))
+    val_concat = pd.concat(val_groups, keys=range(len(val_groups)))
     
-    def get_band_dist(df, band_dict):
-        bands = df['sideSlip'].apply(lambda x: band_dict.get(round(float(x), 1), 'unknown'))
+    feature_cols = [col for col in train_concat.columns if col not in columns_to_drop]
+    
+    if scaling:
+        scaler = StandardScaler()
+        train_concat[feature_cols] = scaler.fit_transform(train_concat[feature_cols])
+        val_concat[feature_cols] = scaler.transform(val_concat[feature_cols])
+    else:
+        scaler = None
+    
+    # Separate back into groups
+    train_groups_scaled = [train_concat.xs(i).reset_index(drop=True) for i in range(len(train_groups))]
+    val_groups_scaled = [val_concat.xs(i).reset_index(drop=True) for i in range(len(val_groups))]
+    
+    # Verify distributions
+    def get_band_dist(groups, band_dict):
+        if not groups:
+            return {'many': 0, 'medium': 0, 'few': 0}
+        all_data = pd.concat(groups, ignore_index=True)
+        bands = all_data['sideSlip'].apply(lambda x: band_dict.get(round(float(x), 1), 'unknown'))
         total = len(bands)
         return {
             'many': 100 * (bands == 'many').sum() / total,
@@ -241,83 +215,21 @@ def load_data(
             'few': 100 * (bands == 'few').sum() / total
         }
     
-    train_dist = get_band_dist(train_df, band_dict)
-    val_dist = get_band_dist(val_df, band_dict)
+    train_dist = get_band_dist(train_groups_scaled, band_dict)
+    val_dist = get_band_dist(val_groups_scaled, band_dict)
     
-    print(f"\n🔵 TRAIN: Many={train_dist['many']:.1f}%, Medium={train_dist['medium']:.1f}%, Few={train_dist['few']:.1f}%")
-    print(f"🟢 VAL:   Many={val_dist['many']:.1f}%, Medium={val_dist['medium']:.1f}%, Few={val_dist['few']:.1f}%")
-    
-    # Check mismatch
-    max_diff = max(
-        abs(train_dist['many'] - val_dist['many']),
-        abs(train_dist['medium'] - val_dist['medium']),
-        abs(train_dist['few'] - val_dist['few'])
-    )
-    
-    if max_diff < 0.1:
-        print(f"✅ PERFECT MATCH! Maximum difference: {max_diff:.3f}%")
-    else:
-        print(f"⚠️  Distribution difference: {max_diff:.1f}%")
-    
-    # Prepare features and targets
-    print("\n🔧 Preparing features and targets...")
-    
-    X_train = train_df.drop(columns=columns_to_drop).values
-    y_train = train_df[target].values
-    
-    X_val = val_df.drop(columns=columns_to_drop).values
-    y_val = val_df[target].values
-    
-    # Create sequences
-    print(f"🔧 Creating sequences (length={sequence_length})...")
-    X_train_seq, y_train_seq = create_sequences(X_train, y_train, sequence_length)
-    X_val_seq, y_val_seq = create_sequences(X_val, y_val, sequence_length)
-    
-    # Scaling
-    if scaling:
-        print("🔧 Fitting scaler on training data...")
-        scaler = StandardScaler()
-        
-        # Flatten sequences for scaling
-        n_train, seq_len, n_features = X_train_seq.shape
-        X_train_flat = X_train_seq.reshape(-1, n_features)
-        X_train_scaled = scaler.fit_transform(X_train_flat)
-        X_train_seq = X_train_scaled.reshape(n_train, seq_len, n_features)
-        
-        # Transform validation
-        n_val, _, _ = X_val_seq.shape
-        X_val_flat = X_val_seq.reshape(-1, n_features)
-        X_val_scaled = scaler.transform(X_val_flat)
-        X_val_seq = X_val_scaled.reshape(n_val, seq_len, n_features)
-    else:
-        scaler = None
+    print(f"\nTrain: Many={train_dist['many']:.1f}%, Medium={train_dist['medium']:.1f}%, Few={train_dist['few']:.1f}%")
+    print(f"Val:   Many={val_dist['many']:.1f}%, Medium={val_dist['medium']:.1f}%, Few={val_dist['few']:.1f}%")
     
     # Create datasets
-    train_dataset = TimeSeriesDataset(X_train_seq, y_train_seq)
-    val_dataset = TimeSeriesDataset(X_val_seq, y_val_seq)
+    train_dataset = create_concat_dataset_from_groups(train_groups_scaled, target, sequence_length, columns_to_drop)
+    val_dataset = create_concat_dataset_from_groups(val_groups_scaled, target, sequence_length, columns_to_drop)
     
     # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batchsize,
-        shuffle=shuffle,  # Shuffle batches, but data already stratified
-        num_workers=0,
-        pin_memory=True
-    )
+    train_loader = DataLoader(train_dataset, batch_size=batchsize, shuffle=shuffle, num_workers=0, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batchsize, shuffle=False, num_workers=0, pin_memory=True)
     
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batchsize,
-        shuffle=False,  # Never shuffle validation
-        num_workers=0,
-        pin_memory=True
-    )
-    
-    print("✅ Data loading complete!")
-    print(f"   Train samples: {len(train_dataset):,}")
-    print(f"   Val samples:   {len(val_dataset):,}")
-    print(f"   Batch size:    {batchsize}")
-    print(f"   Features:      {X_train_seq.shape[-1]}")
+    print(f"\nTrain: {len(train_dataset):,} sequences | Val: {len(val_dataset):,} sequences")
     print("="*80 + "\n")
     
     return train_loader, val_loader, scaler, train_dataset, val_dataset
@@ -328,140 +240,98 @@ def load_test_data(
     scaler,
     columns_to_drop,
     sequence_length=20,
-    batchsize=256
+    threshold_value=3.0,
+    threshold_column="vxCG",
+    batchsize=256,
+    seed=42
 ):
     """
-    Load and preprocess test data with same pipeline as training.
+    Load test data with V1-compatible pipeline.
     
-    IMPORTANT: Test data should NOT have threshold applied!
-    Kaggle evaluates on all test samples after sequencing.
+    Process:
+    1. Apply threshold per file → get groups
+    2. Concat groups with multi-index keys
+    3. Scale using training scaler
+    4. Separate back into groups
+    5. Create ConcatDataset from groups
     
-    Args:
-        test_path: Path to test directory
-        scaler: Fitted scaler from training data
-        columns_to_drop: List of columns to drop (should match training)
-        sequence_length: Length of sequences to create
-        batchsize: Batch size for DataLoader
-        
-    Returns:
-        test_loader: DataLoader for test data
-        test_ids: Array of sequential test IDs (0 to N-1)
-        test_dataset: PyTorch Dataset
+    This matches V1's exact pipeline flow.
     """
     print("="*80)
-    print("📂 LOADING TEST DATA (NO THRESHOLD)")
+    print("📂 Loading Test Data (V1-Compatible)")
     print("="*80)
     
-    # Load all test files
     test_files = sorted(glob.glob(f"{test_path}/test_part_*.csv"))
     print(f"\nFound {len(test_files)} test files")
+    print(f"🔧 Applying threshold per file: {threshold_column} > {threshold_value} (grouping)\n")
     
-    all_test_data = []
-    total_samples = 0
+    all_groups = []
+    raw_count = 0
     
     for file_path in test_files:
         file_name = Path(file_path).name
         df = pd.read_csv(file_path)
+        raw_count += len(df)
         
-        # Add dummy vyCG column if missing (will be dropped anyway)
+        # Add dummy columns if needed (will be dropped)
+        if 'sideSlip' not in df.columns and 'sideSlip' in columns_to_drop:
+            df['sideSlip'] = 0.0
         if 'vyCG' not in df.columns and 'vyCG' in columns_to_drop:
             df['vyCG'] = 0.0
         
-        # Drop columns to match training
-        df_features = df.drop(columns=columns_to_drop, errors='ignore')
+        # Apply threshold grouping (V1 ApplyThreshold logic)
+        groups = apply_threshold_v1_logic(df, threshold_column, threshold_value, sequence_length)
         
-        print(f"   {file_name}: {len(df):,} samples → {df_features.shape[1]} features")
-        all_test_data.append(df_features.values)
-        total_samples += len(df)
+        if len(groups) > 0:
+            total_samples = sum(len(g) for g in groups)
+            print(f"   {file_name:25s} | {len(groups)} groups, {total_samples:,} samples")
+            all_groups.extend(groups)
+        else:
+            print(f"   {file_name:25s} | No valid groups")
     
-    # Concatenate all test data
-    test_data = np.concatenate(all_test_data, axis=0)
+    print(f"\n✅ Total groups: {len(all_groups)}")
+    
+    # V1 pipeline: concat → scale → separate
+    test_concat = pd.concat(all_groups, keys=range(len(all_groups)))
+    after_threshold = len(test_concat)
+    
+    feature_cols = [col for col in test_concat.columns if col not in columns_to_drop]
+    test_concat[feature_cols] = scaler.transform(test_concat[feature_cols])
+    test_groups_scaled = [test_concat.xs(i).reset_index(drop=True) for i in range(len(all_groups))]
     
     print(f"\n📊 Test Data Summary:")
-    print(f"   Total samples: {total_samples:,}")
-    print(f"   Features:      {test_data.shape[1]}")
+    print(f"   Raw samples: {raw_count:,}")
+    print(f"   After threshold: {after_threshold:,} (removed {raw_count - after_threshold:,})")
+    print(f"   Expected sequences: {after_threshold - sequence_length:,} (Kaggle expects 49,328)")
     
-    # Scale test data using training scaler
-    print(f"\n🔧 Scaling test data using training scaler...")
-    test_data_scaled = scaler.transform(test_data)
-    
-    # Create sequences
-    print(f"🔧 Creating sequences (length={sequence_length})...")
-    X_test_seq = []
-    for i in range(len(test_data_scaled) - sequence_length + 1):
-        X_test_seq.append(test_data_scaled[i:i + sequence_length])
-    X_test_seq = np.array(X_test_seq)
-    
-    # Generate sequential IDs (0 to N-1)
-    test_ids = np.arange(len(X_test_seq))
-    
-    print(f"✅ Created {len(X_test_seq):,} sequences")
-    print(f"   Shape: {X_test_seq.shape}")
-    print(f"   IDs: {test_ids[0]} to {test_ids[-1]}")
-    
-    # Create dataset (no targets for test data)
-    test_dataset = TestDataset(X_test_seq)
+    # Create dataset from groups
+    test_dataset = create_unsupervised_concat_dataset_from_groups(
+        test_groups_scaled, sequence_length, columns_to_drop
+    )
     
     test_loader = DataLoader(
         test_dataset,
         batch_size=batchsize,
-        shuffle=False,  # Never shuffle test data
+        shuffle=False,
         num_workers=0,
         pin_memory=True
     )
     
-    print(f"\n✅ Test data loading complete!")
-    print(f"   Test samples: {len(test_dataset):,}")
-    print(f"   Batch size:   {batchsize}")
-    print(f"   Features:     {X_test_seq.shape[-1]}")
+    print(f"\n✅ Test sequences: {len(test_dataset):,}")
+    if len(test_dataset) == 49328:
+        print("   ✅ Count matches Kaggle requirement!")
+    else:
+        print(f"   ⚠️  Expected 49,328 but got {len(test_dataset):,}")
     print("="*80 + "\n")
     
-    return test_loader, test_ids, test_dataset
-
-
-def create_sequences_with_ids(data, ids, sequence_length=20):
-    """
-    Create sequences from data while tracking IDs.
-    
-    Args:
-        data: Input features (N, F)
-        ids: Sample IDs (N,)
-        sequence_length: Length of each sequence
-        
-    Returns:
-        X: Sequences of shape (N-seq_len+1, seq_len, F)
-        ids_seq: IDs corresponding to last element of each sequence
-    """
-    X = []
-    ids_seq = []
-    
-    for i in range(len(data) - sequence_length + 1):
-        X.append(data[i:i+sequence_length])
-        ids_seq.append(ids[i+sequence_length-1])  # ID of last element in sequence
-    
-    return np.array(X), np.array(ids_seq)
-
-
-class TestDataset(Dataset):
-    """
-    Dataset for test data (no targets).
-    """
-    def __init__(self, X):
-        self.X = torch.FloatTensor(X)
-    
-    def __len__(self):
-        return len(self.X)
-    
-    def __getitem__(self, idx):
-        return self.X[idx]
+    return test_loader
 
 
 if __name__ == "__main__":
     print("\n" + "="*80)
-    print("🧪 TESTING V5 DATALOADER")
+    print("🧪 TESTING V5 FIXED DATALOADER")
     print("="*80)
     
-    # Test loading
     train_loader, val_loader, scaler, train_ds, val_ds = load_data(
         train_path=r"datasets_challenge\train",
         val_ratio=0.15,
@@ -482,7 +352,8 @@ if __name__ == "__main__":
     print(f"   Val batches:   {len(val_loader)}")
     
     # Sample batch
-    X_batch, y_batch = next(iter(train_loader))
-    print(f"\n📦 Sample batch shape:")
-    print(f"   X: {X_batch.shape}")
-    print(f"   y: {y_batch.shape}")
+    if len(train_loader) > 0:
+        X_batch, y_batch = next(iter(train_loader))
+        print(f"\n📦 Sample batch shape:")
+        print(f"   X: {X_batch.shape}")
+        print(f"   y: {y_batch.shape}")
