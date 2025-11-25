@@ -130,6 +130,99 @@ def load_data(
     
     return train_dataloader, val_dataloader, pipeline
     
+def load_data_file_based(
+    train_files,
+    val_files,
+    columns_to_standardize = feature_names,
+    columns_to_drop = [],
+    sequence_length = 20,
+    target = None,
+    threshold = False,
+    threshold_value = None,
+    threshold_column = None,
+    batchsize = 512,
+    scaling = True,
+    seed = 42,
+    shuffle = True,
+    ):
+    """
+    Load and preprocess data from specific csv files with file-based train/val split.
+
+    Parameters:
+    train_files (list): List of file paths for training data.
+    val_files (list): List of file paths for validation data.
+    columns_to_standardize (list): List of features to standardize.
+    columns_to_drop (list): List of features to drop.
+    sequence_length (int): Length of the sequences.
+    target (str): The target column.
+    threshold (bool, optional): Whether to apply a threshold.
+    threshold_value (float, optional): The threshold value.
+    threshold_column (str, optional): The column to apply the threshold to.
+    batchsize (int): Batch size for DataLoaders.
+    scaling (bool, optional): Whether to apply scaling. Defaults to True.
+    seed (int, optional): Random seed. Defaults to 42.
+    shuffle (bool, optional): Whether to shuffle training data. Defaults to True.
+
+    Returns:
+    train_dataloader (DataLoader): DataLoader for the training data.
+    val_dataloader (DataLoader): DataLoader for the validation data.
+    pipeline (Pipeline): The fitted preprocessing pipeline.
+    """
+
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    # Load training files
+    train_dfs = []
+    for filename in train_files:
+        print(f"Train: {filename}")
+        train_dfs.append(pd.read_csv(filename))
+
+    # Load validation files
+    val_dfs = []
+    for filename in val_files:
+        print(f"Val:   {filename}")
+        val_dfs.append(pd.read_csv(filename))
+
+    # Create pipeline
+    ct = ColumnTransformer([("stand", StandardScaler(), columns_to_standardize)],
+                       remainder="passthrough",
+                       verbose_feature_names_out=False)
+
+    pipeline = Pipeline([('threshold', ApplyThreshold(threshold=threshold_value, by=threshold_column, seq_length=sequence_length)), 
+                        ('concat', _ConcatDataFrames()), 
+                        ('stand', ct.set_output(transform="pandas")),
+                        ('separate', _SeparateDataFrames())
+                        ])
+    
+    # check if data for ssl or fine-tuning should be loaded
+    if target == None:
+        # ssl
+        pipeline.steps.append(['concat dataset',CreateConcatDataset(unsupervised_sequential_dataset, seq_length=sequence_length, columns_to_drop=columns_to_drop)])
+    else:
+        # supervised
+        pipeline.steps.append(['concat dataset',CreateConcatDataset(sequential_dataset, target=target, seq_length=sequence_length, columns_to_drop=columns_to_drop)])
+
+    # check if a threshold should be applied
+    if threshold == False:
+         pipeline.steps = [step for step in pipeline.steps if step[0] not in ['threshold']]
+
+    # check if scaling should be applied
+    if scaling == False:
+        pipeline.steps = [step for step in pipeline.steps if step[0] not in ['concat', 'stand', 'separate']]
+         
+    # Fit pipeline on training data and transform
+    train_dataset = pipeline.fit_transform(train_dfs)
+
+    # Transform validation data with fitted pipeline
+    val_dataset = pipeline.transform(val_dfs)
+
+    # Create DataLoaders
+    train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=shuffle, worker_init_fn=seed_worker, generator=g)
+    val_dataloader = DataLoader(val_dataset, batch_size=batchsize, shuffle=False, worker_init_fn=seed_worker, generator=g)
+    
+    return train_dataloader, val_dataloader, pipeline
+
 def load_test_data(
     test_path,
     batchsize,
