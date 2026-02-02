@@ -2,6 +2,11 @@
 
 Variational Autoencoder experiments for deep imbalanced regression.
 
+## Notebooks
+- `01_vae_architecture_sweep.ipynb` - Latent dim, beta, architecture sweeps
+- `02_vae_loss_experiments.ipynb` - DIR losses (LDS, Focal, BMSE)
+- `03_latent_augmentation.ipynb` - Generate synthetic data via latent space
+
 ## Results
 
 | Model | Params | Score | Status |
