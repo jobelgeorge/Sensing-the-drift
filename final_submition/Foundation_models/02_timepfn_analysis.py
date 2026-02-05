@@ -15,7 +15,7 @@ from scipy.signal import savgol_filter
 import warnings
 warnings.filterwarnings('ignore')
 
-# Path setup
+# Path setup - Find project root by checking for utils/ and models/ folders
 def find_project_root():
     here = Path.cwd()
     for p in [here, *here.parents]:
@@ -26,6 +26,10 @@ def find_project_root():
 PROJECT_ROOT = find_project_root()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Project imports available:
+# from utils.visualization import plot_method_comparison
+# from utils.reproducibility_utils import seed_everything
 
 
 class TimePFNConfig:

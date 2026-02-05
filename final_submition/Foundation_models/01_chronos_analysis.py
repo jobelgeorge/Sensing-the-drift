@@ -14,7 +14,7 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
-# Path setup
+# Path setup - Find project root by checking for utils/ and models/ folders
 def find_project_root():
     here = Path.cwd()
     for p in [here, *here.parents]:
@@ -26,8 +26,10 @@ PROJECT_ROOT = find_project_root()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Project imports
 from utils.data_loading import load_data, feature_names
 from utils.reproducibility_utils import seed_everything
+from utils.visualization import plot_method_comparison
 
 
 class Config:

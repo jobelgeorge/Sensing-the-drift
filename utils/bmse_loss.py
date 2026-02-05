@@ -198,3 +198,44 @@ class BalancedL1Loss(nn.Module):
     def get_sample_weights(self, targets):
         """Get weights for visualization/analysis."""
         return self._compute_weights(targets)
+
+
+class BMCLoss(nn.Module):
+    """
+    Balanced MSE via Calibration (BMC).
+    
+    A simpler version that learns the noise parameter during training.
+    From the BMC paper, this estimates the uncertainty in predictions.
+    
+    Args:
+        init_noise_sigma: Initial noise standard deviation (learnable)
+    """
+    
+    def __init__(self, init_noise_sigma=1.0):
+        super().__init__()
+        # Learnable noise parameter
+        self.noise_sigma = nn.Parameter(torch.tensor(init_noise_sigma))
+        
+    def forward(self, pred, target):
+        """
+        Compute BMC loss.
+        
+        Args:
+            pred: Predictions (B,) or (B, 1)
+            target: Targets (B,)
+            
+        Returns:
+            Scalar loss value
+        """
+        pred = pred.squeeze()
+        target = target.squeeze()
+        
+        # Squared error
+        sq_error = (pred - target) ** 2
+        
+        # BMC formula: loss = sq_error / (2 * sigma^2) + log(sigma)
+        # This balances fitting error with learned uncertainty
+        noise_var = self.noise_sigma ** 2
+        loss = sq_error / (2 * noise_var) + torch.log(self.noise_sigma)
+        
+        return loss.mean()

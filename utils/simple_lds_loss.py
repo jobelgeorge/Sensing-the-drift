@@ -20,13 +20,16 @@ def get_lds_kernel_window(kernel='gaussian', ks=5, sigma=2.0):
     Generate LDS kernel for smoothing label distribution.
     
     Args:
-        kernel: 'gaussian', 'triang', or 'laplace'
+        kernel: 'gaussian', 'triang', or 'laplace' (or 'laplacian')
         ks: kernel size (must be odd)
         sigma: bandwidth parameter
     
     Returns:
         kernel_window: normalized kernel weights
     """
+    # Normalize kernel name
+    if kernel == 'laplacian':
+        kernel = 'laplace'
     assert kernel in ['gaussian', 'triang', 'laplace']
     assert ks % 2 == 1, "Kernel size must be odd"
     
@@ -186,3 +189,60 @@ class SimpleLDSLoss(nn.Module):
         bin_indices = torch.bucketize(target, self.bin_edges) - 1
         bin_indices = bin_indices.clamp(0, self.num_bins - 1)
         return self.weights[bin_indices]
+
+
+def create_lds_weights(targets, kernel='gaussian', ks=5, sigma=2.0, num_bins=100, reweight='sqrt_inv'):
+    """
+    Create LDS weights for given targets.
+    
+    This is a standalone function to compute LDS weights without creating a loss function.
+    Useful for custom loss implementations that need LDS reweighting.
+    
+    Args:
+        targets: numpy array or tensor of training labels
+        kernel: 'gaussian', 'triang', or 'laplace'
+        ks: kernel size (must be odd)
+        sigma: bandwidth parameter (None uses default)
+        num_bins: number of bins to discretize labels
+        reweight: 'inv' (1/count) or 'sqrt_inv' (1/sqrt(count))
+    
+    Returns:
+        weights: numpy array of weights per bin
+    """
+    # Convert to numpy if needed
+    if isinstance(targets, torch.Tensor):
+        targets = targets.cpu().numpy()
+    targets = np.array(targets).flatten()
+    
+    # Handle default sigma
+    if sigma is None:
+        sigma = 2.0
+    
+    # Normalize kernel name
+    if kernel == 'laplacian':
+        kernel = 'laplace'
+    
+    # Create bin edges
+    y_min, y_max = float(targets.min()), float(targets.max())
+    bin_edges = np.linspace(y_min, y_max, num_bins + 1)
+    
+    # Count samples per bin
+    bin_counts, _ = np.histogram(targets, bins=bin_edges)
+    
+    # Apply LDS smoothing
+    kernel_window = get_lds_kernel_window(kernel, ks, sigma)
+    eff_label_dist = convolve1d(bin_counts.astype(float), weights=kernel_window, mode='constant')
+    
+    # Avoid division by zero
+    eff_label_dist = np.maximum(eff_label_dist, 1e-6)
+    
+    # Compute inverse weights
+    if reweight == 'sqrt_inv':
+        weights = 1.0 / np.sqrt(eff_label_dist)
+    else:  # inv
+        weights = 1.0 / eff_label_dist
+    
+    # Normalize weights to mean=1.0
+    weights = weights / weights.mean()
+    
+    return weights
