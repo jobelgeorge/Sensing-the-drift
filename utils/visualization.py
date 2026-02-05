@@ -578,6 +578,85 @@ def plot_grid_search_heatmap(grid_df: pd.DataFrame,
 
 
 # ============================================================================
+# 6. PREDICTIONS VS TRUTH LINE PLOT
+# ============================================================================
+def plot_predictions_vs_truth(predictions: np.ndarray,
+                              targets: np.ndarray,
+                              title: str = "Ground Truth vs Predictions",
+                              max_samples: Optional[int] = None,
+                              height: int = 500,
+                              width: int = 1200) -> go.Figure:
+    """
+    Interactive line plot showing predictions overlaid on ground truth.
+    
+    Creates a Plotly figure with ground truth in blue and predictions in red,
+    allowing zooming, panning, and hovering to examine specific values.
+    
+    Args:
+        predictions: Model predictions array
+        targets: Ground truth values array  
+        title: Plot title
+        max_samples: Maximum samples to plot (None = all). Use for large datasets.
+        height: Plot height in pixels
+        width: Plot width in pixels
+    
+    Returns:
+        Plotly Figure object
+    
+    Example:
+        >>> preds, targets = get_predictions(model, val_loader, device)
+        >>> fig = plot_predictions_vs_truth(preds, targets, title="Model Predictions")
+        >>> fig.show()
+    """
+    # Flatten arrays
+    preds_flat = np.array(predictions).flatten()
+    targets_flat = np.array(targets).flatten()
+    
+    # Subsample if needed
+    if max_samples is not None and len(preds_flat) > max_samples:
+        indices = np.linspace(0, len(preds_flat)-1, max_samples, dtype=int)
+        preds_flat = preds_flat[indices]
+        targets_flat = targets_flat[indices]
+    
+    # Calculate statistics
+    mae = np.mean(np.abs(preds_flat - targets_flat))
+    
+    fig = go.Figure()
+    
+    # Ground truth
+    fig.add_trace(go.Scatter(
+        y=targets_flat,
+        mode='lines',
+        name='Ground Truth',
+        line=dict(color='blue', width=1.5),
+        hovertemplate='Index: %{x}<br>Truth: %{y:.3f}<extra></extra>'
+    ))
+    
+    # Predictions
+    fig.add_trace(go.Scatter(
+        y=preds_flat,
+        mode='lines',
+        name='Predictions',
+        line=dict(color='red', width=1.5),
+        opacity=0.8,
+        hovertemplate='Index: %{x}<br>Pred: %{y:.3f}<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        title=f'{title} (MAE: {mae:.4f})',
+        xaxis_title='Sample Index',
+        yaxis_title='Sideslip Angle (degrees)',
+        width=width,
+        height=height,
+        template='plotly_white',
+        legend=dict(x=0.02, y=0.98),
+        hovermode='x unified'
+    )
+    
+    return fig
+
+
+# ============================================================================
 # USAGE EXAMPLES
 # ============================================================================
 def demo_visualizations():
