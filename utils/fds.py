@@ -214,7 +214,19 @@ class FDS(nn.Module):
             std_smooth = torch.sqrt(var_smooth)
             
             # Per-bin calibration: z-score by bin's running stats, then map to bin's smoothed stats
-            feats_z = (feats - mu_run) / std_run  # Normalize by current bin stats
-            feats_calibrated = feats_z * std_smooth + mu_smooth  # Map to smoothed bin stats
+            # number of samples per bin
+            bin_counts = self.running_count[bin_indices]
+
+            # define many-shot threshold (tune this)
+            many_shot_mask = bin_counts > 50  
+
+            # default: no calibration
+            feats_calibrated = feats.clone()
+
+            # apply FDS only to non-many-shot samples
+            if (~many_shot_mask).any():
+                idx = ~many_shot_mask
+                feats_z = (feats[idx] - mu_run[idx]) / std_run[idx]
+                feats_calibrated[idx] = feats_z * std_smooth[idx] + mu_smooth[idx]
         
         return feats_calibrated

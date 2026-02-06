@@ -119,6 +119,9 @@ class DIR_LDS_Loss(nn.Module):
             weights = 1.0 / np.sqrt(eff_label_dist)
         
         # Normalize weights to mean=1.0 (keeps scale consistent)
+        weights = np.clip(weights, a_min=0.1, a_max=None)
+
+        # Normalize weights to mean = 1.0
         weights = weights / weights.mean()
         
         self.register_buffer('weights', torch.from_numpy(weights).float())
@@ -131,35 +134,26 @@ class DIR_LDS_Loss(nn.Module):
         print(f"   Weight mean: {weights.mean():.3f} (should be ≈1.0)")
     
     def forward(self, pred, target):
-        """
-        Compute weighted loss.
-        
-        Args:
-            pred: predictions (B, 1) or (B,)
-            target: ground truth (B, 1) or (B,)
-        
-        Returns:
-            scalar loss
-        """
         pred = pred.view(-1)
         target = target.view(-1)
-        
-        # Find bin indices for each target using bucketize (more robust than searchsorted)
-        bin_indices = torch.bucketize(target, self.bin_edges) - 1
+
+        #  ensure same device
+        bin_edges = self.bin_edges.to(target.device)
+        weights = self.weights.to(target.device)
+
+        # bucketize
+        bin_indices = torch.bucketize(target, bin_edges) - 1
         bin_indices = bin_indices.clamp(0, self.num_bins - 1)
-        
-        # Get weights for each sample
-        sample_weights = self.weights[bin_indices]
-        
-        # Compute base loss
+
+        sample_weights = weights[bin_indices]
+
+        # base loss
         if self.base == 'l1':
             loss = F.l1_loss(pred, target, reduction='none')
         elif self.base == 'smoothl1':
             loss = F.smooth_l1_loss(pred, target, reduction='none', beta=self.smoothl1_beta)
-        else:  # mse
+        else:
             loss = F.mse_loss(pred, target, reduction='none')
-        
-        # Apply reweighting
-        weighted_loss = loss * sample_weights
-        
-        return weighted_loss.mean()
+
+        return (loss * sample_weights).mean()
+
