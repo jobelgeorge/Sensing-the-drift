@@ -1,12 +1,13 @@
 # Sideslip Angle Estimation with LDS and FDS
 
-This repository contains experiments on **imbalanced regression** for vehicle sideslip angle estimation using a **Vanilla RNN** model.  
-We investigate two imbalance-handling techniques:
+This folder presents experiments on **imbalanced regression** for vehicle **sideslip angle estimation** using a **Vanilla RNN** model.  
+We evaluate and compare three imbalance-handling techniques:
 
-- **LDS (Label Distribution Smoothing)**  
-- **FDS (Feature Distribution Smoothing)**  
+- **LDS (Label Distribution Smoothing)**
+- **FDS (Feature Distribution Smoothing)**
+- **RankSim (Ranking Similarity Regularization)**
 
-The goal is to reduce error on rare (few-shot) regions while maintaining acceptable performance on frequent (many-shot) regions.
+The objective is to reduce prediction error in **rare (few-shot) regions** while maintaining strong performance in **frequent (many-shot) regions**.
 
 ---
 
@@ -16,10 +17,10 @@ The target variable **sideslip angle** has a **highly imbalanced distribution**:
 
 - Many samples clustered near zero (many-shot region)
 - Very few samples at extreme values (few-shot region)
+This work investigates imbalance-aware techniques proposed in:
 
-To address this, we experiment with LDS and FDS as proposed in:
-
-> **Delving into Deep Imbalanced Regression (ICML 2021)**
+- **Delving into Deep Imbalanced Regression (ICML 2021)** — LDS, FDS  
+- **RankSim: Ranking Similarity Regularization for Deep Imbalanced Regression (NeurIPS 2022)** — RankSim
 
 ---
 
@@ -116,10 +117,44 @@ FDS underperformed LDS in this task, especially in many-shot regions, likely due
 
 ---
 
-## 6. Key Takeaways
+## 6. RankSim: Ranking Similarity Regularization
 
-- **LDS consistently outperforms FDS** for this dataset
-- Reweighting labels is more effective than feature calibration here
-- Many-shot error is easier to control with LDS
-- FDS requires careful tuning and can degrade frequent-region accuracy
+### Core Idea
+RankSim enforces **consistency between target similarity and feature similarity**.
+
+Samples with similar target values are encouraged to have similar latent feature representations, preserving ranking structure.
+
+### Loss Formulation
+\[
+\mathcal{L} = \mathcal{L}_{regression} + \lambda \cdot \mathcal{L}_{RankSim}
+\]
+
+RankSim is applied **only during training** and does not alter inference.
+
+### Configuration
+- Base loss: `SmoothL1Loss`
+- Temperature: `0.1`
+- RankSim weight (λ): `0.05`
+
+### Results (Public Score ↓ better)
+
+| Split | Public Score |
+|------|--------------|
+| RankSim V1 | 0.31016 |
+| RankSim V2 | 0.34851 |
+| RankSim V3 | **0.29578** |
+| RankSim V4 | 0.36101 |
+
+**Observation:**  
+RankSim consistently improves over FDS and approaches LDS performance, showing strong robustness to randomized splits.
+
+---
+
+## 7. Key Takeaways
+
+- **LDS is the most effective method** for this dataset
+- **RankSim offers a strong representation-level alternative**
+- RankSim improves robustness without affecting inference
+- **FDS requires careful tuning** and may degrade many-shot accuracy
+- Label-level imbalance correction is particularly effective for sideslip estimation
 
