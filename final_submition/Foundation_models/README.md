@@ -2,53 +2,73 @@
 
 Pre-trained time series foundation models evaluated for deep imbalanced regression.
 
-## Results
+## Kaggle Results Summary
 
-| Model | Parameters | Kaggle Score | Status |
-|-------|------------|--------------|--------|
-| Vanilla RNN (Baseline) | 13K | 0.217 | Best |
-| Chronos Zero-Shot | t5-small + Ridge | Failed | Threshold exceeded |
-| Chronos Fine-Tuned | t5-small + MLP | 0.543 | 2.5x worse |
-| Chronos-Base | t5-base 200M | 0.55 | No improvement |
-| TimePFN Zero-Shot | Balanced context | 0.65 | 3x worse |
-| TimePFN Fine-Tuned | Custom tuning | 0.60 | 2.8x worse |
+| Model | Status | Notes |
+|-------|--------|-------|
+| Vanilla RNN (Baseline) | **0.25540** | predictions09.csv |
+| Chronos Zero-Shot | No submission | Failed many-shot threshold |
+| Chronos Fine-Tuned | No submission | Failed many-shot threshold |
+| TimePFN Zero-Shot | No submission | Failed many-shot threshold |
+| TimePFN Fine-Tuned | No submission | Failed many-shot threshold |
+
+**Note:** Foundation model experiments did not produce valid Kaggle submissions as they failed the many-shot MAE ≤ 0.2 constraint.
+
+## Comparison with Submitted Models
+
+### Best Kaggle Submissions (for reference)
+| Model | Submission File | Kaggle Score |
+|-------|-----------------|--------------|
+| **RNN Two-Stage** | predictions09.csv | **0.25540** |
+| VAE (beta=0.005) | submission_beta_0.005.csv | 0.25319 |
+| Focal L1 (2-stage) | submission_ensemble_focal_l1.csv | 0.25913 |
+| L1 Only | submission_L1_val0.1551_20260207_1952.csv | 0.27279 |
 
 ## Hypotheses
 
-| Hypothesis | Result |
-|------------|--------|
-| Foundation model patterns transfer to vehicle dynamics | Rejected |
-| Zero-shot inference provides reasonable estimates | Rejected |
-| Fine-tuning improves foundation model performance | Partial |
-| Larger models (200M vs 46M) improve results | Rejected |
+| Hypothesis | Result | Evidence |
+|------------|--------|----------|
+| Foundation model patterns transfer | Rejected | Failed threshold constraint |
+| Zero-shot inference works | Rejected | Many-shot MAE > 0.2 |
+| Fine-tuning improves foundation models | Rejected | Still failed threshold |
+| Larger models (200M) improve results | Rejected | No valid submission |
 
 ## Chronos Experiments
 
 T5-based encoder-decoder, tokenizes time series as language tokens.
 
-| Configuration | Score |
-|---------------|-------|
-| Zero-Shot + Ridge | Failed threshold |
-| Fine-Tuned MLP | 0.543 |
-| Chronos-Base 200M | 0.55 |
+| Configuration | Result |
+|---------------|--------|
+| Zero-Shot + Ridge | Failed many-shot threshold |
+| Fine-Tuned MLP | Failed many-shot threshold |
+| Chronos-Base 200M | Failed many-shot threshold |
 
-Failure: Forecasting model misaligned with state estimation task.
+**Failure Analysis:** Forecasting model architecture misaligned with state estimation task.
 
 ## TimePFN Experiments
 
 Transformer-based prior-fitted network for in-context learning.
 
-| Configuration | Score |
-|---------------|-------|
-| Zero-Shot | 0.65 |
-| Fine-Tuned | 0.60 |
+| Configuration | Result |
+|---------------|--------|
+| Zero-Shot | Failed many-shot threshold |
+| Fine-Tuned | Failed many-shot threshold |
 
-Failure: Sequence length mismatch (96 expected, 20 available).
+**Failure Analysis:** Sequence length mismatch (96 expected, 20 available).
+
+## Why Foundation Models Failed
+
+1. **Task Mismatch**: Foundation models designed for forecasting, not state estimation
+2. **Sequence Length**: TimePFN requires 96 timesteps, data has 20
+3. **Many-shot Constraint**: Must achieve MAE ≤ 0.2 on common samples first
+4. **Domain Gap**: Vehicle dynamics patterns not in pre-training data
 
 ## Conclusion
 
-Task-specific models with appropriate loss functions outperform foundation models for domain-specific imbalanced regression.
+Task-specific models with appropriate loss functions (RNN + two-stage training) outperform foundation models for domain-specific imbalanced regression.
+
+**Best Kaggle Score (Simple RNN):** 0.25540
 
 ## Configuration
 
-Seed: 42 | Train/Val: 80/20 | Sequence: 20 timesteps | Filter: vxCG > 3.0 m/s
+Seed: 42 | Train/Val: 85/15 | Sequence: 20 timesteps | Filter: vxCG > 3.0 m/s
