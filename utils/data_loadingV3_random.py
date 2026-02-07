@@ -203,7 +203,7 @@ def load_data(
     train_dist = get_band_dist(train_groups_scaled, band_dict)
     val_dist = get_band_dist(val_groups_scaled, band_dict)
     
-    print(f"\n✅ RANDOM Split (should match test distribution better):")
+    print(f"\nRANDOM Split (should match test distribution better):")
     print(f"Train: Many={train_dist['many']:.1f}%, Medium={train_dist['medium']:.1f}%, Few={train_dist['few']:.1f}%")
     print(f"Val:   Many={val_dist['many']:.1f}%, Medium={val_dist['medium']:.1f}%, Few={val_dist['few']:.1f}%")
     
@@ -233,7 +233,7 @@ def load_test_data(
 ):
     """Load test data (same as V2)."""
     print("="*80)
-    print("📂 Loading Test Data")
+    print("Loading Test Data")
     print("="*80)
     
     test_files = sorted(glob.glob(f"{test_path}/test_part_*.csv"))
@@ -263,9 +263,9 @@ def load_test_data(
     
     test_loader = DataLoader(test_dataset, batch_size=batchsize, shuffle=False, num_workers=0, pin_memory=True)
     
-    print(f"✅ Test sequences: {len(test_dataset):,}")
+    print(f"Test sequences: {len(test_dataset):,}")
     if len(test_dataset) == 49328:
-        print("   ✅ Matches Kaggle requirement!")
+        print("   Matches Kaggle requirement!")
     print("="*80 + "\n")
     
     return test_loader
