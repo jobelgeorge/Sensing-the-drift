@@ -3,27 +3,27 @@
 Systematic evaluation of loss functions for vehicle sideslip angle prediction in imbalanced data settings.
 
 **Document Structure:**
-1. **Best Results** → Quick summary of winning approach
-2. **Motivation** → Why standard losses fail for imbalanced data
-3. **Research Question** → What we aim to discover (focus: generalization)
-4. **Loss Function Selection** → **Rationale for each approach tested (before experiments)**
-5. **Experimental Results** → Actual performance validation
-6. **Hypothesis Validation** → Expected vs actual outcomes
-7. **Detailed Analysis** → Why HybridWeightedFocalL1 wins
-8. **Implementation Guide** → Practical usage
+1. **Best Results** - Quick summary of winning approach
+2. **Motivation** - Why standard losses fail for imbalanced data
+3. **Research Question** - What we aim to discover (focus: generalization)
+4. **Loss Function Selection** - **Rationale for each approach tested (before experiments)**
+5. **Experimental Results** - Actual performance validation
+6. **Hypothesis Validation** - Expected vs actual outcomes
+7. **Detailed Analysis** - Why HybridWeightedFocalL1 wins
+8. **Implementation Guide** - Practical usage
 
 ---
 
-## 🏆 Best Result Summary
+## Best Result Summary
 
 | Metric | Baseline (L1) | **HybridWeightedFocalL1** | Improvement |
 |--------|---------------|---------------------------|-------------|
-| **Kaggle Score** | 0.2728 | **0.2643** | ✅ **-3.1%** |
-| **Validation MAE** | 0.1551 | **0.1478** | ✅ **-4.7%** |
-| **Many-shot MAE** | 0.193° | **0.139°** | ✅ **-28.0%** |
-| **Medium-shot MAE** | 0.256° | **0.198°** | ✅ **-22.7%** |
-| **Few-shot MAE** | 0.339° | **0.282°** | ✅ **-16.8%** |
-| **Generalization Gap** | 0.1177 | **0.1165** | ✅ **Better** |
+| **Kaggle Score** | 0.2728 | **0.2643** | **-3.1%** |
+| **Validation MAE** | 0.1551 | **0.1478** | **-4.7%** |
+| **Many-shot MAE** | 0.193° | **0.139°** | **-28.0%** |
+| **Medium-shot MAE** | 0.256° | **0.198°** | **-22.7%** |
+| **Few-shot MAE** | 0.339° | **0.282°** | **-16.8%** |
+| **Generalization Gap** | 0.1177 | **0.1165** | **Better** |
 
 **Configuration**: γ=0.5, class-balanced weights [1.0, 1.3, 1.6], 112+ configurations tested  
 **Architecture**: VanillaRNN (64 hidden, 1 layer, ReLU)  
@@ -96,8 +96,8 @@ Few-shot sideslip angles often represent critical driving scenarios (e.g., extre
 2. **Difficulty-level**: Hard samples (high error) contribute equally to easy samples
 
 **Solution**: HybridWeightedFocalL1
-- **Shot-band weights** ($w_b$): Compensate for sample count imbalance → Prevent model collapse to majority class
-- **Focal mechanism** ($|e|^\gamma$): Amplify gradients for hard samples → Adaptive difficulty focusing
+- **Shot-band weights** ($w_b$): Compensate for sample count imbalance; prevent model collapse to majority class
+- **Focal mechanism** ($|e|^\gamma$): Amplify gradients for hard samples; adaptive difficulty focusing
 - **Synergy**: Each shot-band learns at optimal pace without inter-class competition
 
 **Loss Function (What We Optimize):**
@@ -115,7 +115,7 @@ $$
 - $w_{b_i}$ scales all samples in shot-band $b$ equally (class-level, constant per band)
 - $|e_i|^\gamma$ scales each sample by its difficulty (instance-level, varies per sample)
 - **Gradient factorization**: $\nabla \mathcal{L} = \underbrace{w_b}_{\text{data-level}} \times \underbrace{|e|^\gamma}_{\text{error-level}} \times \text{sign}(e)$
-- These mechanisms are **orthogonal** → No interference, pure synergy
+- These mechanisms are **orthogonal**; no interference, pure synergy
 
 ---
 
@@ -129,9 +129,9 @@ Given the imbalanced nature of our dataset (97% many-shot, 2% medium-shot, 1% fe
 **Rationale:** Standard choice for regression; provides interpretable error metric (degrees of sideslip).
 
 **Expected Behavior:**
-- ✅ Stable convergence, well-understood properties
-- ❌ Biased toward many-shot samples (majority class dominance)
-- ❌ Equal weighting of easy/hard samples (no difficulty adaptation)
+- Stable convergence, well-understood properties
+- Biased toward many-shot samples (majority class dominance)
+- Equal weighting of easy/hard samples (no difficulty adaptation)
 
 **Hypothesis:** Will underperform on medium/few-shot samples due to sample imbalance.
 
@@ -145,10 +145,10 @@ $$\mathcal{L}_{\text{Focal}} = |e|^{\gamma+1} \quad \text{where} \quad \frac{\pa
 - Easy samples (small $|e|$) down-weighted automatically
 
 **Expected Improvements:**
-- ✅ Better few-shot performance (naturally have higher errors, get more attention)
-- ✅ Reduced many-shot overfitting (well-learned samples down-weighted)
-- ❌ Potential training instability if γ too high
-- ⚠️ May still suffer from sample count imbalance (no explicit class weighting)
+- Better few-shot performance (naturally have higher errors, get more attention)
+- Reduced many-shot overfitting (well-learned samples down-weighted)
+- Potential training instability if γ too high
+- May still suffer from sample count imbalance (no explicit class weighting)
 
 **Hypothesis:** 15-25% improvement on few-shot, 10-15% on medium-shot, 5-10% on many-shot.
 
@@ -161,10 +161,10 @@ $$\mathcal{L}_{\text{Focal}} = |e|^{\gamma+1} \quad \text{where} \quad \frac{\pa
 - **Fixed heuristic:** Manual tuning based on error analysis
 
 **Expected Improvements:**
-- ✅ More balanced performance across shot-bands
-- ✅ Prevents model collapse to many-shot predictions
-- ❌ Fixed weights don't adapt to current model difficulty
-- ⚠️ Risk of over-weighting few-shot (validation overfitting)
+- More balanced performance across shot-bands
+- Prevents model collapse to many-shot predictions
+- Fixed weights don't adapt to current model difficulty
+- Risk of over-weighting few-shot (validation overfitting)
 
 **Hypothesis:** 10-15% improvement overall, but may overfit to validation set distribution.
 
@@ -179,10 +179,10 @@ $$\mathcal{L}_{\text{Hybrid}} = w_b \cdot |e|^{\gamma+1}$$
 - **Orthogonality:** Shot-weights don't interfere with focal adaptation (gradients factorize)
 
 **Expected Improvements:**
-- ✅ **Best of both worlds:** Sample balance + difficulty adaptation
-- ✅ Better generalization (shot-weights prevent validation overfitting)
-- ✅ Uniform improvements across all shot-bands
-- ⚠️ Two hyperparameters to tune (γ, weights) vs one each for components
+- **Best of both worlds:** Sample balance + difficulty adaptation
+- Better generalization (shot-weights prevent validation overfitting)
+- Uniform improvements across all shot-bands
+- Two hyperparameters to tune (γ, weights) vs one each for components
 
 **Hypothesis:** 20-30% improvement on many-shot (critical for Kaggle threshold), 15-25% on medium/few-shot, AND smallest generalization gap.
 
@@ -240,14 +240,14 @@ $$\mathcal{L}_{\text{Hybrid}} = w_b \cdot |e|^{\gamma+1}$$
 
 | Hypothesis | Result | Evidence |
 |------------|--------|----------|
-| **Dual balancing improves generalization** | **Confirmed** ✅ | **HybridFocal: Smallest gap (0.1165), best Kaggle (0.2643)** |
-| Focal mechanism improves shot-band balance | **Confirmed** ✅ | Focal L1: Better shot-band MAEs but poor generalization |
-| Combining focal + weighting = better performance | **Confirmed** ✅ | **HybridFocal: -3.1% Kaggle vs -4.9% for Focal alone** |
-| Shot-band weights prevent overfitting | **Confirmed** ✅ | HybridFocal gap (0.1165) < Focal gap (0.1347) |
-| Higher γ = better few-shot performance | **Rejected** ❌ | γ=0.5 outperforms γ=0.3 by 18.5% (0.3133→0.2643) |
-| Weighted losses alone reduce shot-band bias | **Partially Confirmed** 🟡 | Good validation but worst generalization gap (0.1499) |
-| MSE provides smoother gradients | **Rejected** ❌ | 7.3% worse than L1 (0.2728→0.2943) |
-| Continuous + discrete balancing synergize | **Confirmed** ✅ | HybridFocal beats both components individually |
+| **Dual balancing improves generalization** | **Confirmed** | **HybridFocal: Smallest gap (0.1165), best Kaggle (0.2643)** |
+| Focal mechanism improves shot-band balance | **Confirmed** | Focal L1: Better shot-band MAEs but poor generalization |
+| Combining focal + weighting = better performance | **Confirmed** | **HybridFocal: -3.1% Kaggle vs -4.9% for Focal alone** |
+| Shot-band weights prevent overfitting | **Confirmed** | HybridFocal gap (0.1165) < Focal gap (0.1347) |
+| Higher γ = better few-shot performance | **Rejected** | γ=0.5 outperforms γ=0.3 by 18.5% (0.3133→0.2643) |
+| Weighted losses alone reduce shot-band bias | **Partially Confirmed** | Good validation but worst generalization gap (0.1499) |
+| MSE provides smoother gradients | **Rejected** | 7.3% worse than L1 (0.2728→0.2943) |
+| Continuous + discrete balancing synergize | **Confirmed** | HybridFocal beats both components individually |
 
 ### Hypothesis Validation: Expected vs Actual Performance
 
@@ -255,12 +255,12 @@ $$\mathcal{L}_{\text{Hybrid}} = w_b \cdot |e|^{\gamma+1}$$
 
 | Loss Function | Expected Kaggle | **Actual Kaggle** | Prediction Accuracy |
 |---------------|----------------|-------------------|---------------------|
-| HybridWeightedFocal | 0.24-0.26 | **0.2643** | ✅ Within range (optimistic end) |
-| Focal L1 (γ=0.5) | 0.26-0.28 | **0.2862** | ✅ Within range |
-| Weighted L1 | 0.27-0.29 | **0.3038** | ⚠️ Worse than expected (+0.01) |
-| L1 Baseline | 0.27-0.30 | **0.2728** | ✅ Within range |
-| Combined/Huber | 0.28-0.32 | **0.3067/0.3292** | ✅ Within range |
-| MSE | 0.29-0.34 | **0.2943** | ✅ Within range |
+| HybridWeightedFocal | 0.24-0.26 | **0.2643** | Within range (optimistic end) |
+| Focal L1 (γ=0.5) | 0.26-0.28 | **0.2862** | Within range |
+| Weighted L1 | 0.27-0.29 | **0.3038** | Worse than expected (+0.01) |
+| L1 Baseline | 0.27-0.30 | **0.2728** | Within range |
+| Combined/Huber | 0.28-0.32 | **0.3067/0.3292** | Within range |
+| MSE | 0.29-0.34 | **0.2943** | Within range |
 
 **Key Insights:**
 1. **HybridFocal hypothesis CONFIRMED**: Achieved expected 3.1% improvement, validating dual-balancing theory
@@ -676,14 +676,14 @@ for epoch in range(num_epochs):
 
 ### Performance Checklist
 
-✅ **Expected Improvements vs L1 Baseline:**
+**Expected Improvements vs L1 Baseline:**
 - [ ] Many-shot MAE: -25% to -30%
 - [ ] Medium-shot MAE: -20% to -25%
 - [ ] Few-shot MAE: -15% to -20%
 - [ ] Overall Kaggle: -2% to -4%
 - [ ] Generalization gap: Smaller than baseline
 
-❌ **Warning Signs (Re-tune if observed):**
+**Warning Signs (Re-tune if observed):**
 - [ ] Many-shot MAE > 0.20 (Kaggle may reject submission)
 - [ ] Generalization gap > 0.13 (overfitting)
 - [ ] Training loss diverges (reduce γ or learning rate)

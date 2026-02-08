@@ -15,13 +15,13 @@ Systematic evaluation of residual connections for addressing generalization gaps
 
 ---
 
-## 🏆 Best Result Summary
+## Best Result Summary
 
 | Metric | Baseline (VanillaRNN) | **HiddenResidual** | Improvement |
 |--------|----------------------|-------------------|-------------|
-| **Kaggle Score** | 0.3309 | **0.2587** | ✅ **-21.8%** |
-| **Validation MAE** | 0.1567 | **0.1541** | ✅ **-1.7%** |
-| **Generalization Gap** | 0.1742 | **0.1046** | ✅ **-40.0%** |
+| **Kaggle Score** | 0.3309 | **0.2587** | **-21.8%** |
+| **Validation MAE** | 0.1567 | **0.1541** | **-1.7%** |
+| **Generalization Gap** | 0.1742 | **0.1046** | **-40.0%** |
 | **Training Epochs** | 25 | 30 | Stable |
 | **Parameters** | 9,857 | 11,329 | +14.9% |
 
@@ -47,8 +47,8 @@ The standard single-layer RNN showed systematic failure on test generalization:
 
 ```
 Training Progress:
-Epoch  10: Train Loss 0.153 | Val MAE 0.1567 ← Best validation
-Epoch  25: Train Loss 0.129 | Val MAE 0.1665 ← Early stopping
+Epoch  10: Train Loss 0.153 | Val MAE 0.1567 (best validation)
+Epoch  25: Train Loss 0.129 | Val MAE 0.1665 (early stopping)
 
 Kaggle Submission: 0.3309° (111% worse than validation)
 ```
@@ -144,10 +144,10 @@ Input → RNN (64 hidden) → Mean Pool → FC(64→1) → Output
 ```
 
 **Expected Behavior:**
-- ✅ Simple, well-understood architecture
-- ❌ Gradient bottleneck through FC layer after RNN
-- ❌ No mechanism to preserve input features
-- ❌ Large generalization gap (0.1742°)
+- Simple, well-understood architecture
+- Gradient bottleneck through FC layer after RNN
+- No mechanism to preserve input features
+- Large generalization gap (0.1742°)
 
 **Hypothesis:** Will overfit to training dynamics without architectural regularization.
 
@@ -165,10 +165,10 @@ $$\hat{\beta} = W_{out} \bar{h} + W_{skip} \bar{x} + b$$
 where $\bar{x} = \frac{1}{T} \sum_{t=1}^{T} x_t$ (mean-pooled input)
 
 **Expected Improvements:**
-- ✅ Strong regularization (forces model to use raw features)
-- ✅ Preserves input information lost in RNN transformations
-- ❌ May underperform on validation (regularization penalty)
-- ✅ Should generalize well (input features distribution-invariant)
+- Strong regularization (forces model to use raw features)
+- Preserves input information lost in RNN transformations
+- May underperform on validation (regularization penalty)
+- Should generalize well (input features distribution-invariant)
 
 **Parameters:** 9,880 (+23 vs baseline, +0.2%)
 
@@ -189,10 +189,10 @@ $$h' = \text{ReLU}(W_1 \bar{h} + b_1)$$
 $$\hat{\beta} = W_2 (h' + W_{res} \bar{h}) + b_2$$
 
 **Expected Improvements:**
-- ✅ **Gradient highway**: Bypass FC bottleneck, direct path to RNN weights
-- ✅ **Feature reuse**: Combines transformed (FC) and direct (skip) RNN features
-- ✅ **Minimal overhead**: Small capacity increase (+1.5k params), avoids overfitting
-- ✅ **Stable optimization**: Residual enables deeper FC processing without gradient issues
+- **Gradient highway**: Bypass FC bottleneck, direct path to RNN weights
+- **Feature reuse**: Combines transformed (FC) and direct (skip) RNN features
+- **Minimal overhead**: Small capacity increase (+1.5k params), avoids overfitting
+- **Stable optimization**: Residual enables deeper FC processing without gradient issues
 
 **Parameters:** 11,329 (+1,472 vs baseline, +14.9%)
 
@@ -212,10 +212,10 @@ Input → RNN Layer 1 ──┬→ RNN Layer 2 → Pool → FC → Output
 $$h_t^{(2)} = \tanh(W_{ih}^{(2)} h_t^{(1)} + W_{hh}^{(2)} h_{t-1}^{(2)} + b^{(2)}) + W_{skip} h_t^{(1)}$$
 
 **Expected Improvements:**
-- ✅ **Deeper temporal abstraction**: Two layers can learn hierarchical patterns
-- ✅ **Gradient preservation**: Skip connections prevent vanishing across layers
-- ❌ **Risk of overfitting**: 2× capacity may exceed data complexity (8 features, 20 timesteps)
-- ❌ **Slower convergence**: Deeper networks harder to optimize
+- **Deeper temporal abstraction**: Two layers can learn hierarchical patterns
+- **Gradient preservation**: Skip connections prevent vanishing across layers
+- **Risk of overfitting**: 2× capacity may exceed data complexity (8 features, 20 timesteps)
+- **Slower convergence**: Deeper networks harder to optimize
 
 **Parameters:** 18,177 (+8,320 vs baseline, +84.4%)
 
@@ -325,9 +325,9 @@ Why this matters:
 - **Gap $\Delta$** measures overfitting / distribution shift robustness
 
 **Success Criteria:**
-- ✅ Reduce gap below baseline 0.1742°
-- ✅ Improve Kaggle score (deployment performance)
-- ✅ Maintain or improve validation performance
+- Reduce gap below baseline 0.1742°
+- Improve Kaggle score (deployment performance)
+- Maintain or improve validation performance
 
 ---
 
@@ -359,7 +359,7 @@ Every residual architecture outperforms baseline on test generalization:
 Baseline gap:       0.1742° (worst)
 DeepResidual gap:   0.1453° (-16.6%)
 InputResidual gap:  0.1100° (-36.9%)
-HiddenResidual gap: 0.1046° (-40.0%) ← Best
+HiddenResidual gap: 0.1046° (-40.0%) (best)
 ```
 
 **Conclusion**: Residual connections provide architectural regularization, preventing overfitting to training distribution.
@@ -425,10 +425,10 @@ Do validation rankings predict test rankings?
 
 | Model | Val Rank | Kaggle Rank | Consistent? |
 |-------|----------|-------------|-------------|
-| Baseline | #2 | #4 (worst) | ❌ No |
-| InputResidual | #4 (worst) | #3 | ❌ No |
-| **HiddenResidual** | **#1** | **#1** | **✅ Yes** |
-| DeepResidual | #3 | #2 | ❌ No |
+| Baseline | #2 | #4 (worst) | No |
+| InputResidual | #4 (worst) | #3 | No |
+| **HiddenResidual** | **#1** | **#1** | **Yes** |
+| DeepResidual | #3 | #2 | No |
 
 **Only HiddenResidual maintains top rank on both splits** → Most robust architecture.
 
@@ -438,17 +438,17 @@ Do validation rankings predict test rankings?
 
 **InputResid**:
 - **Expected**: Strong regularization, worse validation, better test  
-- **Actual**: ✅ Confirmed! Worst val (0.1608°), 2nd best Kaggle (0.2708°)
+- **Actual**: Confirmed. Worst val (0.1608°), 2nd best Kaggle (0.2708°)
 - **Mechanism**: Input bypass forces feature preservation → generalizes despite validation penalty
 
 **HiddenResidual:**  
 - **Expected**: Best gradient flow, optimal generalization, minimal overhead
-- **Actual**: ✅ Confirmed! Best on all metrics, +14.9% params  
+- **Actual**: Confirmed. Best on all metrics, +14.9% params  
 - **Mechanism**: FC residual provides gradient highway + feature diversity
 
 **DeepResidual:**
 - **Expected**: Richer representations but risk of overfitting  
-- **Actual**: ✅ Confirmed! Helps (+7.8% Kaggle) but overfits (gap still 0.145°)
+- **Actual**: Confirmed. Helps (+7.8% Kaggle) but overfits (gap still 0.145°)
 - **Mechanism**: Residuals insufficient for 2-layer depth on limited data
 
 ---
@@ -485,7 +485,7 @@ When test distribution shifts:
 | Model | Capacity | Training Fit | Test Generalization | Sweet Spot? |
 |-------|----------|--------------|---------------------|-------------|
 | InputResidual | 9,880 | Same as baseline | +18.2% | Too simple |
-| **HiddenResidual** | **11,329** | **Better (+1.7%)** | **+21.8%** | **✅ Optimal** |
+| **HiddenResidual** | **11,329** | **Better (+1.7%)** | **+21.8%** | **Optimal** |
 | DeepResidual | 18,177 | Much better (Train 0.100) | +7.8% | Overfits |
 
 HiddenResidual adds capacity **exactly where needed** (regression head) without excess.
@@ -547,14 +547,14 @@ Despite residual connections, 2-layer RNN underperforms:
 
 Based on 4 architectures tested across identical train/val/test scenarios:
 
-**✅ Recommended**:
+**Recommended**:
 - **HiddenResidualRNN** for production deployment (best generalization)
 - Residual connections in regression head (not within RNN)
 - Monitor generalization gap, not just validation MAE
 - L1 loss + AdamW + early stopping
 - Shallow networks (single RNN layer) + strategic residuals
 
-**❌ Not Recommended**:
+**Not Recommended**:
 - VanillaRNN without residuals (large generalization gap)
 - Multi-layer RNNs on small datasets (depth worsens overfitting)
 - Validation-only model selection (misleading for deployment)
@@ -616,7 +616,7 @@ This trains all 4 models (Baseline + 3 residual variants) and generates:
 4 submission files generated:
 - `submission_Baseline_VanillaRNN_val0.1567_*.csv` (Kaggle: 0.331°)
 - `submission_InputResidual_val0.1608_*.csv` (Kaggle: 0.271°)
-- `submission_HiddenResidual_val0.1541_*.csv` (Kaggle: **0.259°**) ← Best
+- `submission_HiddenResidual_val0.1541_*.csv` (Kaggle: **0.259°**) **(best)**
 - `submission_DeepResidual_2_layers_val0.1597_*.csv` (Kaggle: 0.305°)
 
 ### File Structure
@@ -652,7 +652,7 @@ Note: Model implementations located in ../../models/
 ### Baseline (VanillaRNN)
 ```
 Epoch   1: Train 0.3092 | Val 0.2030
-Epoch  10: Train 0.1530 | Val 0.1567 ← Best
+Epoch  10: Train 0.1530 | Val 0.1567 (best)
 Epoch  25: Train 0.1289 | Val 0.1665
 Early stop | Best Val: 0.1567° | Kaggle: 0.3309° | Gap: 0.1742°
 ```
@@ -660,9 +660,9 @@ Early stop | Best Val: 0.1567° | Kaggle: 0.3309° | Gap: 0.1742°
 ### HiddenResidual (Winner)
 ```
 Epoch   1: Train 0.2888 | Val 0.1839
-Epoch  15: Train 0.1353 | Val 0.1541 ← Best
+Epoch  15: Train 0.1353 | Val 0.1541 (best)
 Epoch  30: Train 0.1135 | Val 0.1655
-Early stop | Best Val: 0.1541° | Kaggle: 0.2587° | Gap: 0.1046° ★
+Early stop | Best Val: 0.1541° | Kaggle: 0.2587° | Gap: 0.1046° (winner)
 ```
 
 **Observation**: Lower final training loss but BETTER generalization (opposite of typical overfitting).
@@ -670,7 +670,7 @@ Early stop | Best Val: 0.1541° | Kaggle: 0.2587° | Gap: 0.1046° ★
 ### InputResidual
 ```
 Epoch   1: Train 0.3179 | Val 0.1862
-Epoch  10: Train 0.1470 | Val 0.1608 ← Best
+Epoch  10: Train 0.1470 | Val 0.1608 (best)
 Epoch  25: Train 0.1233 | Val 0.1734
 Early stop | Best Val: 0.1608° | Kaggle: 0.2708° | Gap: 0.1100°
 ```
@@ -680,7 +680,7 @@ Early stop | Best Val: 0.1608° | Kaggle: 0.2708° | Gap: 0.1100°
 ### DeepResidual (2 layers)
 ```
 Epoch   1: Train 0.2963 | Val 0.1774
-Epoch  50: Train 0.1099 | Val 0.1597 ← Best
+Epoch  50: Train 0.1099 | Val 0.1597 (best)
 Epoch  65: Train 0.1005 | Val 0.1605
 Early stop | Best Val: 0.1597° | Kaggle: 0.3050° | Gap: 0.1453°
 ```
