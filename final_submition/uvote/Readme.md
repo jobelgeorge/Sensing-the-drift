@@ -1,8 +1,8 @@
-# U-Vote for Vehicle Sideslip Estimation
+# U-Vote Implementation for Vehicle Sideslip Estimation
 
 Uncertainty-aware imbalanced regression for vehicle sideslip angle estimation using sequential vehicle dynamics data.
 
-This project evaluates **U-Vote**, **U-Vote with Label Distribution Smoothing (LDS)**, and **U-Vote with Feature Distribution Smoothing (FDS)** on a highly imbalanced dataset.
+This notebooks evaluates **U-Vote**, **U-Vote with Label Distribution Smoothing (LDS)**, and **U-Vote with Feature Distribution Smoothing (FDS)** on a highly imbalanced dataset.
 
 ---
 
@@ -30,7 +30,7 @@ Applies feature distribution smoothing to stabilize representations for rare sid
 
 ---
 
-## Submissions & Scores
+## Kaggle Submissions & Scores
 
 | Method         | Public Score |
 |----------------|-------------:|
@@ -45,7 +45,7 @@ Applies feature distribution smoothing to stabilize representations for rare sid
 | Method         | Observation |
 |---------------|-------------|
 | U-Vote         | Strong and stable baseline |
-| U-Vote + LDS   | Not much of an improvement, sometimes degrades |
+| U-Vote + LDS   | Not much of an improvement, sometimes degrades  |
 | U-Vote + FDS   | Small but consistent gain |
 
 ---
@@ -56,8 +56,8 @@ Applies feature distribution smoothing to stabilize representations for rare sid
   - Learning uncertainty
   - Preventing overconfidence in rare regimes
 
-- **LDS** is not beneficial for this dataset:
+- **LDS with uvote** is not significantly useful for this dataset:
   - Labels are already clean
   - Smoothing blurs band boundaries
 
-- **FDS** provides mild regularization for rare features without harming many-shot regions.
+- **FDS with uvote** provides mild regularization for rare features without harming many-shot regions.

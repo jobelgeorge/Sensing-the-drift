@@ -1,20 +1,21 @@
 # Weighted Sampling for Vehicle Sideslip Estimation
 
-Imbalanced regression for vehicle sideslip angle estimation using **sample reweighting** and **ensembling strategies** on sequential vehicle dynamics data.
+Imbalanced regression for vehicle sideslip angle estimation using **sample reweighting** and **ensembling strategies** on  vehicle dynamics datasets.
 
+This notebooks evaluates **Weighted Sampler**, **Weighted Sampler with Seed Ensemble**, and **Weighted Sampler and Snapshot ensemble** on a highly imbalanced dataset.
 ---
 
 ## Models
 
 ### Weighted Sampler
-A deterministic regression model trained with **band-aware sample weights** derived from the sideslip distribution.  
+A regression model trained with **band-aware sample weights** derived from the sideslip distribution.  
 Rare (**few-shot**) samples receive higher importance during training.
 
 ### Weighted Sampler + Snapshot Ensemble
 Uses **multiple checkpoints from a single training run** (saved at different epochs) and averages their predictions to reduce variance.
 
 ### Weighted Sampler + Seed Ensemble
-Trains **multiple independent models with different random seeds** and averages predictions to improve robustness.
+Trains **multiple independent models with different random 10 seeds** and averages predictions to improve robustness.
 
 ---
 
@@ -53,7 +54,6 @@ Trains **multiple independent models with different random seeds** and averages 
 - **Weighted sampling is highly effective** for this dataset:
   - Directly addresses label imbalance  
   - Preserves extreme sideslip samples  
-  - No architectural complexity required  
 
 - **Snapshot ensembling provides limited benefit:**
   - Snapshots are too correlated  
