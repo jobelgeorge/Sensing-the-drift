@@ -27,8 +27,8 @@ This empirical study addresses three key questions:
 **RQ1**: Do multi-seed ensembles (same architecture, different initializations) improve generalization over single baseline models for imbalanced time-series regression?
 
 **RQ2**: Do multi-architecture ensembles (diverse architectures, same seed) provide superior performance compared to multi-seed approaches?
-
-**RQ3**: Under what conditions do ensemble methods fail to generalize from validation to test sets?
+**RQ3**: Can snapshot ensembles provide a computationally efficient alternative?
+**RQ4**: Under what conditions do ensemble methods fail to generalize from validation to test sets?
 
 ## 2. Ensemble Strategies Investigated
 
@@ -62,7 +62,19 @@ This empirical study addresses three key questions:
 
 **Expected Outcome**: 2-5% MAE improvement over best individual architecture through architectural diversity.
 
-### 2.3 Baseline Model
+### 2.3 Snapshot Ensemble (Temporal Ensembling)
+
+**Theoretical Foundation** 
+Snapshot Ensembles approximate ensemble behavior by saving multiple checkpoints from a single training trajectory and averaging their predictions. Unlike multi-seed or multi-architecture ensembles, snapshot ensembles do not rely on independent model training. Instead, diversity is introduced through parameter drift across epochs as the optimizer explores nearby regions of the loss landscape.
+
+**Hypothesis**:
+Snapshot ensembles will outperform single-model baselines by reducing variance, but may underperform fully independent ensembles due to limited diversity across snapshots.
+
+
+**Expected Outcome**:Snapshot ensembles are expected to moderately improve generalization over a single baseline model by reducing prediction variance through temporal diversity. Since all snapshots originate from the same training trajectory, improvements are anticipated to be smaller than those obtained from fully independent ensembles. 
+
+
+### 2.4 Baseline Model
 
 **Purpose**: Establish performance floor and validate whether ensemble complexity is justified.
 
@@ -103,6 +115,18 @@ OPTIMIZER = torch.optim.AdamW
 SCHEDULER = CosineAnnealingLR
 ```
 
+### 3.4 Snapshot Ensemble (50 Epochs)
+
+**Training Setup**
+- Architecture: **VanillaRNN**
+- Total training epochs: **50**
+- Snapshot epochs: **[35, 40, 45, 50]**
+- Number of snapshots: **4**
+- Optimizer: **AdamW** (learning rate = 3e-4)
+- Loss function: **MAE (L1)**
+
+---
+
 ## 4. Results
 
 ### 4.1 Validation Performance Summary
@@ -113,10 +137,11 @@ SCHEDULER = CosineAnnealingLR
 | Multi-Seed Ensemble (K=5, VanillaRNN) | **0.1487** | **+5.77%** |
 | Best Individual (SimpleLSTM) | **0.1464** | **+7.22%** |
 | Multi-Architecture Ensemble (N=5) | **0.1416** | **+10.27%** |
+| Snapshot Ensemble | **0.13197** | **+16.37%** |
 
 **Validation Observations**:
-- Both ensemble strategies outperformed the baseline
-- Multi-architecture ensemble showed best validation performance
+- All ensemble strategies outperformed the baseline
+- Snapshot ensemble showed best validation performance
 - SimpleLSTM emerged as strongest individual architecture
 - All models improved upon baseline, supporting ensemble hypotheses
 
@@ -124,21 +149,24 @@ SCHEDULER = CosineAnnealingLR
 
 | Model Configuration | Test MAE | Rank vs Baseline |
 |---------------------|----------|------------------|
-| **Baseline VanillaRNN** (seed 42) | **0.32509** | **Best Performance** |
-| Best Individual (SimpleLSTM) | **0.32627** | Inferior (+0.36%) |
-| Multi-Seed Ensemble (K=5, VanillaRNN) | **0.33358** | Inferior (+2.61%) |
-| Multi-Architecture Ensemble (N=5) | **0.34976** | Inferior (+7.59%) |
+| Baseline VanillaRNN (seed 42) | 0.32509 | Reference |
+| Best Individual (SimpleLSTM) | 0.32627 | Inferior (+0.36%) |
+| Multi-Seed Ensemble (K=5, VanillaRNN) | 0.33358 | Inferior (+2.61%) |
+| Multi-Architecture Ensemble (N=5) | 0.34976 | Inferior (+7.59%) |
+| **Snapshot Ensemble** | **0.31709** | **Superior (−2.46%)** |
 
-**Critical Finding**: All ensemble methods and the best individual model performed worse than the simple baseline on the test set.
+**Critical Finding**: While multi-seed and multi-architecture ensembles degraded test performance, the snapshot ensemble achieved a modest improvement over the baseline. This suggests that temporal ensembling provides a more robust form of diversity under distribution shift than ensembles based on seeds or architectural variation.
+
 
 ### 4.3 Performance Gap Analysis
 
 | Model | Val MAE | Test MAE | Generalization Gap |
 |-------|---------|----------|-------------------|
-| Baseline VanillaRNN | 0.1578 | 0.32509 | **+106.0%** |
-| SimpleLSTM | 0.1464 | 0.32627 | **+122.9%** |
-| Multi-Seed Ensemble | 0.1487 | 0.33358 | **+124.3%** |
-| Multi-Architecture Ensemble | 0.1416 | 0.34976 | **+147.0%** |
+| Baseline VanillaRNN | 0.1578 | 0.32509 | +106.0% |
+| SimpleLSTM | 0.1464 | 0.32627 | +122.9% |
+| Multi-Seed Ensemble | 0.1487 | 0.33358 | +124.3% |
+| Multi-Architecture Ensemble | 0.1416 | 0.34976 | +147.0% |
+| **Snapshot Ensemble** | **0.13197** | **0.31709** | **+140.3%** |
 
 **Key Observation**: More complex models showed larger generalization gaps, with the multi-architecture ensemble exhibiting the worst test performance despite best validation results.
 
@@ -173,6 +201,8 @@ This empirical study reveals important cautionary lessons:
 **Multi-seed ensembles failed** because seed variation alone doesn't create sufficient diversity. High correlation (>0.95) means averaged predictions barely differ from individual predictions.
 
 **Multi-architecture ensembles failed worse** despite lower correlation (~0.92), suggesting that architectural diversity alone is insufficient without proper validation-test alignment.
+
+**Snapshot ensembles partially succeeded** by introducing temporal diversity through late-epoch checkpoint averaging within a single training trajectory. While snapshot predictions remained correlated, this form of diversity proved more robust than seed- or architecture-based ensembles, yielding improved test performance relative to other ensemble strategies.
 
 #### 5.2.2 When to Use Ensembles
 
@@ -211,11 +241,14 @@ Despite using 5 different architectures, predictions remained highly correlated 
 
 1. **Negative Result on Ensembles**: Both multi-seed and multi-architecture ensembles underperformed the simple baseline on test data, despite superior validation performance.
 
-2. **Simplicity Wins**: The simplest model (VanillaRNN baseline) achieved best test performance with smallest generalization gap.
+2. **Snapshot Ensembles as a Partial Exception**  
+   Snapshot ensembles achieved improved test performance relative to other ensemble strategies by introducing temporal diversity through late-epoch checkpoint averaging. However, despite outperforming classical ensembles, snapshot ensembles did not eliminate the generalization gap and did not consistently surpass the simplest baseline model.
 
-3. **Diversity is Necessary but Not Sufficient**: Architectural diversity (correlation 0.952) exceeded seed diversity (>0.95), but neither provided enough complementary errors to justify ensemble complexity.
+3. **Simplicity Wins**: The simplest model (VanillaRNN baseline) achieved best test performance with smallest generalization gap.
 
-4. **Validation Overfitting is Real**: Progressive validation improvement (baseline → single-arch → multi-seed → multi-arch) corresponded to progressive test degradation, indicating ensemble-level overfitting.
+4. **Diversity is Necessary but Not Sufficient**: Architectural diversity (correlation 0.952) exceeded seed diversity (>0.95), but neither provided enough complementary errors to justify ensemble complexity.
+
+5. **Validation Overfitting is Real**: Progressive validation improvement (baseline → single-arch → multi-seed → multi-arch) corresponded to progressive test degradation, indicating ensemble-level overfitting.
 
 ## 7. Reproducibility
 
@@ -223,6 +256,7 @@ Despite using 5 different architectures, predictions remained highly correlated 
 
 - **`multi_seed_ensemble.ipynb`**: Complete implementation of K=5 VanillaRNN ensemble
 - **`multi_architecture_ensemble.ipynb`**: Full multi-architecture ensemble with 5 diverse RNN architectures
+- **`snapshot_ensemble.ipynb`**: Snapshot ensemble using a single VanillaRNN trained for 50 epochs with late-stage checkpoint averaging 
 
 ### 7.2 Configuration
 
@@ -234,4 +268,5 @@ All experiments use identical training configurations (Section 3.3) with determi
 Ensemble_Approach/
 ├── multi_seed_ensemble.ipynb           # Multi-seed implementation
 ├── multi_architecture_ensemble.ipynb   # Multi-architecture implementation
+├── snapshot_ensemble.ipynb     # Snapshot ensemble
 ```
