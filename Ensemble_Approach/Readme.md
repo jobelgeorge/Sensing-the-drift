@@ -4,7 +4,7 @@
 
 ## Abstract
 
-This work investigates two ensemble learning strategies—**multi-seed ensembles** and **multi-architecture ensembles**—for improving vehicle sideslip angle estimation under highly imbalanced regression conditions. While ensemble methods theoretically reduce prediction variance through aggregation of diverse models, we present empirical evidence that not all ensemble strategies generalize beyond validation sets. Our experiments reveal a critical gap between validation performance and test set generalization, demonstrating that ensemble approaches can overfit to validation distributions despite strong theoretical foundations. We compare ensemble performance against simple baseline models and analyze the conditions under which ensemble methods fail, providing insights for practitioners working with drift detection in autonomous vehicle systems.
+This work investigates three ensemble learning strategies—**multi-seed ensembles**, **multi-architecture ensembles** and **snapshot ensemble** for improving vehicle sideslip angle estimation under highly imbalanced regression conditions. While ensemble methods theoretically reduce prediction variance through aggregation of diverse models, we present empirical evidence that not all ensemble strategies generalize beyond validation sets. Our experiments reveal a critical gap between validation performance and test set generalization, demonstrating that ensemble approaches can overfit to validation distributions despite strong theoretical foundations. We compare ensemble performance against simple baseline models and analyze the conditions under which ensemble methods fail, providing insights for practitioners working with drift detection in autonomous vehicle systems.
 
 ## 1. Introduction
 
@@ -27,7 +27,9 @@ This empirical study addresses three key questions:
 **RQ1**: Do multi-seed ensembles (same architecture, different initializations) improve generalization over single baseline models for imbalanced time-series regression?
 
 **RQ2**: Do multi-architecture ensembles (diverse architectures, same seed) provide superior performance compared to multi-seed approaches?
+
 **RQ3**: Can snapshot ensembles provide a computationally efficient alternative?
+
 **RQ4**: Under what conditions do ensemble methods fail to generalize from validation to test sets?
 
 ## 2. Ensemble Strategies Investigated
