@@ -8,7 +8,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-# Assuming these are available in your local environment as per your snippet
 from .pipeline_preprocessing import ApplyThreshold, _ConcatDataFrames, _SeparateDataFrames, CreateConcatDataset
 from .custom_datasets import sequential_dataset, unsupervised_sequential_dataset
 from .reproducibility_utils import seed_worker
@@ -48,7 +47,7 @@ def load_data(
     # Weights are inverse of frequency: Many (~1), Medium (~12), Few (~45)
     mapping_dict = dict(zip(dist_df['sideSlip'].round(1), dist_df['band']))
     
-    alpha = 0.5  # try 0.25, 0.5, 0.75
+    alpha = 0.5
 
     def get_weight_from_val(val):
         b = mapping_dict.get(round(float(val), 1), 'many')
@@ -63,8 +62,6 @@ def load_data(
         # Apply exponent scaling
         return base_weight ** alpha
         
-
-    # We remove the files that have near-zero variety
     files_to_exclude = []
 
     # 2. Separate files into Train and Validation
@@ -178,7 +175,8 @@ def load_data(
         batch_size=batchsize, 
         sampler=sampler, 
         worker_init_fn=seed_worker, 
-        generator=g
+        generator=g,
+        shuffle= False
     )
 
     if val_dfs:

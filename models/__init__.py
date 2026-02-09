@@ -12,7 +12,6 @@ from models.bilstm_attention import BiLSTMAttention
 from models.simple_gru import SimpleGRU
 from models.simple_bilstm import SimpleBiLSTM
 from models.vae import SideslipVAE
-from models.uvote import UVOTELSTM
 
 # Loss functions
 from models.loss_functions import (
@@ -41,7 +40,6 @@ __all__ = [
     'SimpleGRU',
     'SimpleBiLSTM',
     'SideslipVAE',
-    'UVOTELSTM',
     # Loss functions
     'FocalL1Loss',
     'AdaptiveFocalL1Loss',
