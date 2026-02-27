@@ -11,20 +11,7 @@ The objective is to reduce prediction error in **rare (few-shot) regions** while
 
 ---
 
-## 1. Problem Overview
-
-The target variable **sideslip angle** has a **highly imbalanced distribution**:
-
-- Many samples clustered near zero (many-shot region)
-- Very few samples at extreme values (few-shot region)
-This work investigates imbalance-aware techniques proposed in:
-
-- **Delving into Deep Imbalanced Regression (ICML 2021)** — LDS, FDS  
-- **RankSim: Ranking Similarity Regularization for Deep Imbalanced Regression (NeurIPS 2022)** — RankSim
-
----
-
-## 2. Model Architecture
+## Model Architecture
 
 All experiments use the same base model for fair comparison.
 
@@ -125,9 +112,9 @@ RankSim enforces **consistency between target similarity and feature similarity*
 Samples with similar target values are encouraged to have similar latent feature representations, preserving ranking structure.
 
 ### Loss Formulation
-\[
-\mathcal{L} = \mathcal{L}_{regression} + \lambda \cdot \mathcal{L}_{RankSim}
-\]
+$$
+\mathcal{L} = \mathcal{L}_{\text{regression}} + \lambda \cdot \mathcal{L}_{\text{RankSim}}
+$$
 
 RankSim is applied **only during training** and does not alter inference.
 

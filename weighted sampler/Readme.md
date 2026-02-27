@@ -64,7 +64,7 @@ This is **implicit oversampling** — exposure changes, data does not.
 
 ## Mathematical Intuition
 
-Let each training sequence $i$ have weight $w_i$.
+Let each training sequence 𝑖 have weight 𝑤𝑖
 
 The expected SGD gradient becomes:
 
@@ -75,8 +75,24 @@ $$
 p(i) = \frac{w_i}{\sum_j w_j}
 $$
 
+**Where:**
+
+- $\nabla \ell_i$ is the gradient contribution from sample 𝑖
+  *(i.e., how the model parameters would change if we trained on this sample).*
+
+- p(i) is the probability that sample 𝑖 is drawn during SGD.
+
+- In weighted sampling, we set $p(i) \propto w_i$, i.e.:
+
+$$
+p(i) = \frac{w_i}{\sum_j w_j}
+$$
+
+So rare samples get higher $w_i$ → they are selected more often, while common samples get lower $w_i$.
+
 Thus:
 
+- So samples with larger weight 𝑤𝑖 are selected more often.
 - Rare samples contribute **more frequently** to optimization
 - No artificial duplication of data
 - No modification to loss gradients

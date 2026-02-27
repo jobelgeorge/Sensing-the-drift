@@ -67,7 +67,7 @@ Each folder is a self-contained experiment with its own README documenting motiv
 
 - **[uvote](./uvote/Readme.md)** (Kaggle: 0.31051) -- U-Vote uncertainty-aware regression + LDS/FDS. Uncertainty aligns with error not label rarity; FDS helps most.
 
-- **[weighted_sampler](./weighted%20sampler/Readme.md)** (Kaggle: 0.25540) -- WeightedRandomSampler for minority oversampling. Improves rare-region exposure; ensembles on top degrade.
+- **[Weighted_sampler](./weighted%20sampler/Readme.md)** (Kaggle: 0.25540) -- WeightedRandomSampler for minority oversampling. Improves rare-region exposure; ensembles on top degrade the few shot score.
 
 - **[Data_loading_strategies](./Data_loading_strategies/README.md)** -- Distribution analysis, dataloader comparison, file-based splits. Exploratory analysis of train/test shift and splitting strategies.
 

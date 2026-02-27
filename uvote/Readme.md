@@ -19,40 +19,6 @@ Feature-level smoothing (FDS) provides the strongest improvement when combined w
 
 ---
 
-## Motivation  
-### Problem: Imbalanced Regression with Uncertainty Blindness
-
-The sideslip angle distribution is **heavily skewed**:
-
-- **Many-shot region (~97%)**: Near-zero sideslip  
-- **Medium-shot (~2%)**: Transitional maneuvers  
-- **Few-shot (~1%)**: Extreme drift / safety-critical cases  
-
-Standard regression models:
-
-- Optimize for mean performance  
-- Treat all prediction errors equally  
-- Provide **no notion of confidence**  
-
-This leads to:
-
-- Overconfident predictions in ambiguous regions  
-- Poor handling of rare but critical samples  
-- Misleading validation metrics  
-
----
-
-## Research Question
-
-**Can uncertainty-aware learning improve robustness and generalization in deep imbalanced regression, beyond simple error minimization?**
-
-**Sub-questions:**
-- Does predicted uncertainty align with true prediction difficulty?
-- Can uncertainty-aware loss reduce overconfidence?
-- How do LDS and FDS interact with uncertainty modeling?
-
----
-
 ## Method Overview: U-Vote
 
 U-Vote extends regression models to predict:
@@ -61,6 +27,17 @@ U-Vote extends regression models to predict:
 - **σ²(x)** → input-dependent uncertainty (heteroscedastic)
 
 U-Vote optimizes a weighted heteroscedastic negative log-likelihood:
+
+```python
+    # inverse variance (confidence)
+    inv_var = torch.exp(-log_var)
+
+    # Gaussian negative log-likelihood
+    nll = 0.5 * inv_var * (y - mu) ** 2 + 0.5 * log_var
+
+    # U-Vote weighting
+    return (w * nll).mean()
+```
 
 ### U-Vote + LDS
 Applies label distribution smoothing to reduce sharp frequency transitions between bands.
@@ -99,7 +76,7 @@ Applies feature distribution smoothing to stabilize representations for rare sid
 - Reduces representation bias caused by imbalance  
 - Preserves uncertainty learning while improving generalization  
 
-**Effect:** Best overall performance (**0.31051**).
+**Effect:** Best overall performance, minor improvement (**0.31051**).
 
 ---
 
@@ -111,22 +88,9 @@ Prediction error increases exactly where predicted uncertainty increases.
 **Observed behavior:**
 - Low error → low σ  
 - High error → high σ  
-- Extreme sideslip values are **not automatically uncertain**  
-- Ambiguous dynamics (e.g., braking + steering) dominate uncertainty  
+- Extreme sideslip values are **not automatically uncertain**   
 
-This confirms **meaningful aleatoric uncertainty learning**.
-
----
-
-## Hypothesis Validation
-
-| Hypothesis | Result |
-|----------|--------|
-| Uncertainty aligns with error | Confirmed |
-| Extreme values always uncertain |  Rejected |
-| LDS stabilizes learning |  Partial |
-| FDS improves generalization | Confirmed |
-| Validation MAE predicts Kaggle |  Weak correlation |
+This confirms **meaningful uncertainty learning**.
 
 ---
 
@@ -143,7 +107,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
 
 ## Key Takeaways
 
-- U-Vote enables **trust-aware regression**
+- U-Vote enables uncertainty-aware regression under severe imbalance
 - Uncertainty reflects **prediction difficulty**, not label rarity
+- Rare but structurally consistent regimes show low uncertainty
 - Feature smoothing (FDS) complements uncertainty learning best
-- Validation MAE alone is insufficient for imbalanced regression
