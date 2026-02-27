@@ -77,18 +77,18 @@ $$
 
 **Where:**
 
-- $\nabla \ell_i$ is the gradient contribution from sample 𝑖
+- $$\nabla \ell_i$$ is the gradient contribution from sample 𝑖
   *(i.e., how the model parameters would change if we trained on this sample).*
 
 - p(i) is the probability that sample 𝑖 is drawn during SGD.
 
-- In weighted sampling, we set $p(i) \propto w_i$, i.e.:
+- In weighted sampling, we set p(i) \propto 𝑤𝑖, i.e.:
 
 $$
 p(i) = \frac{w_i}{\sum_j w_j}
 $$
 
-So rare samples get higher $w_i$ → they are selected more often, while common samples get lower $w_i$.
+So rare samples get higher 𝑤𝑖 → they are selected more often, while common samples get lower 𝑤𝑖.
 
 Thus:
 
