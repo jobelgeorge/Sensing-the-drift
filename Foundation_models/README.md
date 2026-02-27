@@ -2,46 +2,36 @@
 
 Pre-trained time series foundation models evaluated for deep imbalanced regression.
 
-## Kaggle Results Summary
+## Results Summary
 
-| Model | Status | Notes |
-|-------|--------|-------|
-| Vanilla RNN (Baseline) | **0.25540** | predictions09.csv |
-| Chronos Zero-Shot | No submission | Failed many-shot threshold |
-| Chronos Fine-Tuned | No submission | Failed many-shot threshold |
-| TimePFN Zero-Shot | No submission | Failed many-shot threshold |
-| TimePFN Fine-Tuned | No submission | Failed many-shot threshold |
+| Model | Few-Shot MAE | Status |
+|-------|:------------:|--------|
+| **RNN (Best)** | **0.2175** | Baseline |
+| Chronos Base (Fine-tuned) | 0.5210 | Passed threshold, 2.4x worse than RNN |
+| Chronos Small (Fine-tuned) | 0.5430 | Passed threshold, 2.5x worse than RNN |
+| TimePFN | 0.5500 | Passed threshold, 2.5x worse than RNN |
+| Chronos Zero-Shot | ~0.60 | Failed (many-shot MAE=0.295 > 0.2 threshold) |
 
-**Note:** Foundation model experiments did not produce valid Kaggle submissions as they failed the many-shot MAE ≤ 0.2 constraint.
-
-## Comparison with Submitted Models
-
-### Best Kaggle Submissions (for reference)
-| Model | Submission File | Kaggle Score |
-|-------|-----------------|--------------|
-| **RNN Two-Stage** | predictions09.csv | **0.25540** |
-| VAE (beta=0.005) | submission_beta_0.005.csv | 0.25319 |
-| Focal L1 (2-stage) | submission_ensemble_focal_l1.csv | 0.25913 |
-| L1 Only | submission_L1_val0.1551_20260207_1952.csv | 0.27279 |
+Only Chronos Zero-Shot failed the many-shot MAE <= 0.2 constraint. The fine-tuned models passed the threshold but still produced 2.4-2.5x higher few-shot MAE than the simple RNN.
 
 ## Hypotheses
 
 | Hypothesis | Result | Evidence |
 |------------|--------|----------|
-| Foundation model patterns transfer | Rejected | Failed threshold constraint |
-| Zero-shot inference works | Rejected | Many-shot MAE > 0.2 |
-| Fine-tuning improves foundation models | Rejected | Still failed threshold |
-| Larger models (200M) improve results | Rejected | No valid submission |
+| Foundation model patterns transfer | Rejected | All few-shot MAE > 0.52 |
+| Zero-shot inference works | Rejected | Chronos zero-shot many-shot MAE=0.295, failed threshold |
+| Fine-tuning improves foundation models | Rejected | Chronos Base fine-tuned: 0.5210, still 2.4x worse than RNN |
+| Larger models (200M) improve results | Rejected | Chronos Base (200M): 0.5210 vs Small: 0.5430, marginal gain |
 
 ## Chronos Experiments
 
 T5-based encoder-decoder, tokenizes time series as language tokens.
 
-| Configuration | Result |
-|---------------|--------|
-| Zero-Shot + Ridge | Failed many-shot threshold |
-| Fine-Tuned MLP | Failed many-shot threshold |
-| Chronos-Base 200M | Failed many-shot threshold |
+| Configuration | Few-Shot MAE | Notes |
+|---------------|:------------:|-------|
+| Zero-Shot + Ridge | ~0.60 | Many-shot MAE=0.295, failed threshold |
+| Small (Fine-tuned) | 0.5430 | Passed threshold |
+| Base 200M (Fine-tuned) | 0.5210 | Passed threshold, best foundation model |
 
 **Failure Analysis:** Forecasting model architecture misaligned with state estimation task.
 
@@ -49,19 +39,18 @@ T5-based encoder-decoder, tokenizes time series as language tokens.
 
 Transformer-based prior-fitted network for in-context learning.
 
-| Configuration | Result |
-|---------------|--------|
-| Zero-Shot | Failed many-shot threshold |
-| Fine-Tuned | Failed many-shot threshold |
+| Configuration | Few-Shot MAE | Notes |
+|---------------|:------------:|-------|
+| TimePFN | 0.5500 | Passed threshold |
 
 **Failure Analysis:** Sequence length mismatch (96 expected, 20 available).
 
-## Why Foundation Models Failed
+## Why Foundation Models Underperformed
 
 1. **Task Mismatch**: Foundation models designed for forecasting, not state estimation
 2. **Sequence Length**: TimePFN requires 96 timesteps, data has 20
-3. **Many-shot Constraint**: Must achieve MAE ≤ 0.2 on common samples first
-4. **Domain Gap**: Vehicle dynamics patterns not in pre-training data
+3. **Domain Gap**: Vehicle dynamics patterns not in pre-training data
+4. **Chronos Zero-Shot**: Only model that failed the many-shot MAE <= 0.2 constraint
 
 ## Conclusion
 
