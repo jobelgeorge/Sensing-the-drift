@@ -1,18 +1,14 @@
 # Weighted Sampler Experiments for Deep Imbalanced Regression
 
-Imbalanced regression for vehicle sideslip angle estimation using **sample reweighting** and **ensembling strategies** on  vehicle dynamics datasets.
 ---
 
 ## Document Structure
 
-1. **Best Results** – Quick summary of the winning sampling strategy  
-2. **Motivation** – Why standard random sampling fails  
-3. **Research Question** – What problem weighted sampling is designed to solve  
-4. **Method Overview** – How `WeightedRandomSampler` works (before experiments)  
-5. **Experimental Results** – Empirical validation  
-6. **Analysis & Interpretation** – Why it works (and when it fails)  
-7. **Implementation Guide** – Practical usage details   
-
+1. **Best Results** – Quick summary of the winning sampling strategy   
+2. **Method Overview** – How `WeightedRandomSampler` works (before experiments)  
+3. **Experimental Results** – Empirical validation  
+4. **Analysis & Interpretation** – Why it works (and when it fails)  
+5. **Implementation Guide** – Practical usage details   
 
 ---
 
@@ -32,39 +28,6 @@ Imbalanced regression for vehicle sideslip angle estimation using **sample rewei
 - **Sampler**: `WeightedRandomSampler(replacement=True)`  
 - **Architecture**: Vanilla RNN (64 hidden units, 1 layer)
 - **Input:** 20 timesteps × 22 features 
-
----
-
-## Motivation
-
-### Problem: Sampling Bias in Imbalanced Regression
-
-The sideslip angle dataset exhibits **severe target imbalance**:
-
-- **Many-shot regions** dominate training exposure (>95%)
-- **Few-shot regions** occur rarely but represent **critical driving scenarios**
-- Standard random sampling mirrors the dataset distribution
-
-As a result:
-
-- Most mini-batches contain only many-shot targets
-- Rare regimes contribute little to gradient updates
-- The model underfits rare but safety-critical behaviors
-
-**Key Insight**  
-> Even with a perfect loss function, a model cannot learn from samples it rarely sees.
-
----
-
-## Research Question
-
-**Can rebalancing training exposure — without modifying the dataset or loss function — improve performance on rare target regions while preserving performance on dominant regimes?**
-
-### Sub-questions
-
-- Does increasing the sampling probability of few-shot samples improve prediction accuracy?
-- Can this be achieved **without distorting temporal structure** of sequences?
-- Does weighted sampling improve generalization or risk overfitting?
 
 ---
 
@@ -101,23 +64,22 @@ This is **implicit oversampling** — exposure changes, data does not.
 
 ## Mathematical Intuition
 
-Let each training sequence \( i \) have weight \( w_i \).
+Let each training sequence $i$ have weight $w_i$.
 
 The expected SGD gradient becomes:
 
-\[
-\mathbb{E}[\nabla \mathcal{L}] = \sum_i p(i)\,\nabla \ell_i
+$$
+\mathbb{E}[\nabla \mathcal{L}] 
+= \sum_i p(i)\,\nabla \ell_i
 \quad \text{where} \quad
 p(i) = \frac{w_i}{\sum_j w_j}
-\]
+$$
 
 Thus:
 
 - Rare samples contribute **more frequently** to optimization
 - No artificial duplication of data
 - No modification to loss gradients
-
-This places weighted sampling in the family of **reweighting / resampling approaches** for imbalanced regression.
 
 ---
 
